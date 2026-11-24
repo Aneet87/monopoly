@@ -1,0 +1,69 @@
+MONOPOLY ONLINE - HOW TO PLAY WITH FRIENDS FAR AWAY
+=====================================================
+
+THE BIG IDEA
+Your computer is the "game referee". Your friends connect to YOU using a
+5-letter room code. Everybody sees the same board and only clicks their own
+player. Nothing to install, no accounts.
+
+STEP 1 - PUT THE GAME ON THE INTERNET (one time only)
+Your friends need a web address to open the game. A free site called Netlify
+can give you one in about a minute.
+
+  1. Open your web browser and go to:   app.netlify.com/drop
+  2. On your computer, open the folder:  Desktop > Claude > monopoly-online
+  3. Drag the WHOLE "monopoly-online" folder onto the Netlify page.
+  4. Wait a few seconds. Netlify shows you a web address that looks like
+     something-random.netlify.app
+  5. Write that address down. That is your game's web address!
+
+  Tip: Netlify may ask you to make a free account so the address stays up
+  forever. Without an account it can disappear after a while. If it
+  disappears, just drag the folder in again to get a new address.
+
+STEP 2 - START A GAME (you, the host)
+  1. Open your game's web address.
+  2. Type your name and pick a token.
+  3. Click "Create a room". A big 5-letter CODE appears.
+  4. Click "Copy invite link" and send it to your friends in a text or chat.
+     (Or tell them the web address and the code.)
+  5. Watch your friends pop into the Players list.
+  6. Pick your rules (or a preset), then click "Start game".
+
+  IMPORTANT: Keep your browser page open the whole game. Your page is the
+  referee. If you close it, the game stops for everyone. (If you accidentally
+  close it, open the address again and click "Resume hosting".)
+
+STEP 3 - JOIN A GAME (your friends)
+  1. Open the invite link. The code is already filled in.
+     (Or open the web address and type the code in the "Join" box.)
+  2. Type a name, pick a token, click "Join".
+  3. Wait for the host to start. That's it!
+
+IF SOMEONE GETS DISCONNECTED
+  - Their phone went to sleep or their Wi-Fi blinked? Have them open the
+    game address again and click "Rejoin room". They get their player back
+    with all their money and properties.
+  - If they don't come back within about 20 seconds, a computer player plays
+    for them so everyone else is not stuck waiting.
+
+OTHER THINGS YOU CAN DO
+  - "+ Computer player": adds a computer opponent to the room.
+  - "+ Another player on this device": two people sharing the host's screen.
+  - Keyboard shortcuts work for YOUR player: R roll, B buy, A auction,
+    E end turn, J pay jail fine, C use jail card.
+
+IF IT WON'T CONNECT
+  - Make sure the host still has the game page open.
+  - Double-check the code (it is 5 letters/numbers, no O, 0, I or 1).
+  - Some Wi-Fi networks (work, school, hotels) block this kind of connection.
+    Try mobile data or a different Wi-Fi.
+
+GOOD TO KNOW
+  - This uses a free public matchmaking service (PeerJS) to introduce your
+    computers to each other. After that, game data goes straight between
+    your browsers. It's free, but a free service can occasionally be slow.
+  - Anyone who has your room code can join until the game starts. After the
+    game starts, only the people already in it can come back.
+  - Your original single-screen game (the "monopoly" folder) is not changed
+    at all. You can still play it anytime.
