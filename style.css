@@ -242,3 +242,12 @@ input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1p
 .prow .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .panel.room .rc { letter-spacing: .12em; margin: 0 6px; color: var(--accent); }
 button:disabled.bigstart { opacity: .5; cursor: not-allowed; }
+
+/* ---- phones & tablets: bigger tap targets, no keyboard hints ---- */
+@media (max-width: 700px) {
+  #center .actions button { font-size: 14px; padding: 9px 16px; min-height: 38px; }
+  #center .status { font-size: max(12px, 3.3cqw); }
+  .pl .cash { font-size: 17px; }
+  button.sm { min-height: 32px; padding: 6px 12px; }
+}
+@media (hover: none) { kbd { display: none; } }
