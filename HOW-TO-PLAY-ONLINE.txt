@@ -34,6 +34,11 @@ STEP 2 - START A GAME (you, the host)
   referee. If you close it, the game stops for everyone. (If you accidentally
   close it, open the address again and click "Resume hosting".)
 
+AFTER AN UPDATE
+  - When the game is updated on GitHub, everyone should refresh the page
+    (computer: Ctrl+Shift+R, phone: close the tab and open it again) so
+    that all players are on the same version.
+
 STEP 3 - JOIN A GAME (your friends)
   1. Open the invite link. The code is already filled in.
      (Or open the web address and type the code in the "Join" box.)
@@ -46,6 +51,47 @@ IF SOMEONE GETS DISCONNECTED
     with all their money and properties.
   - If they don't come back within about 20 seconds, a computer player plays
     for them so everyone else is not stuck waiting.
+
+IF YOU LEFT BY ACCIDENT (OR YOUR PHONE REFRESHED)
+  - Open the game address and click "Rejoin room". You get your player back.
+  - Using a different phone/computer, or you cleared your browser? Open the
+    address, type the room code and your name, click Join. The game shows you
+    the players who are away - tap "That's me" next to yours.
+  - While you're away, a computer plays for you. You can take over again at
+    any time.
+
+PAUSE THE GAME AND FINISH LATER (host only)
+  1. Click "Pause & save" at the top of the right-hand panel.
+  2. Everyone goes back to the menu. The game is saved IN YOUR BROWSER on
+     the computer you were hosting from. (Don't clear your browsing data, and
+     use the same computer and browser to continue.)
+  3. Later: open the game address and click "Resume hosting". The game waits
+     ("on hold") until everyone has come back.
+  4. Your friends open the game address and click "Rejoin room".
+  5. When everyone is back, the game starts again by itself. You can also
+     click "Start anyway" to go on without waiting.
+
+UNDO A HOUSE YOU BOUGHT BY MISTAKE
+  - After you buy a house or hotel, an "Undo" button shows in your
+    Properties panel. Click it to get your money back.
+  - You can undo until your turn ends. After that, houses stay.
+
+COMPUTER PLAYERS: EASY / MEDIUM / HARD
+  - When you add a computer in the lobby, pick its level next to its name.
+  - Easy: plays by gut feel, makes mistakes, takes simple trades, never
+    proposes trades.
+  - Medium: sensible, steady player. Offers trades now and then.
+  - Hard: plays to win. Fights for colour sets, builds fast, makes smart
+    trade offers (swaps, set-completing deals), and won't hand you a set
+    cheaply.
+  - Computers offer trades to people only every few turns so they don't
+    pester you. Decline an offer and they won't repeat that exact offer.
+
+BOARD THEMES
+  - In the lobby, pick a theme: Classic, New York City, Japan, World Tour,
+    Space Voyage, Fantasy Kingdom or Sweet Treats.
+  - Only names, icons and colours change. Prices and rents stay the same.
+  - Everyone sees the theme the host picked.
 
 OTHER THINGS YOU CAN DO
   - "+ Computer player": adds a computer opponent to the room.

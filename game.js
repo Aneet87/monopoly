@@ -110,6 +110,22 @@ const CARDS = {
   ],
 };
 
+
+// ---------------------------------------------------------------- board themes (names only; see themes.js)
+const CLASSIC_NAMES = SPACES.map(s => s.name);
+const CARD_ORIG = { chance: CARDS.chance.map(c => c.text), chest: CARDS.chest.map(c => c.text) };
+const CARD_PLACES = [5, 11, 24, 39];   // spaces that cards mention by name
+
+function applyTheme(key) {
+  const T = (typeof THEMES !== 'undefined' && THEMES[key]) || null;
+  SPACES.forEach((s, i) => { s.name = T && T.names && T.names[i] ? T.names[i] : CLASSIC_NAMES[i]; });
+  ['chance', 'chest'].forEach(deck => CARDS[deck].forEach((c, k) => {
+    let t = CARD_ORIG[deck][k];
+    CARD_PLACES.forEach(i => { t = t.split(CLASSIC_NAMES[i]).join(SPACES[i].name); });
+    c.text = t;
+  }));
+}
+
 const DEFAULTS = {
   startCash: 1500,
   incomeTaxChoice: true, // landing on Income Tax: pay $200 or 10% of total worth
@@ -127,6 +143,7 @@ const DEFAULTS = {
   jailFine: 50,         // cost to leave jail
   rentPct: 100,         // rent multiplier in percent
   setBonus: true,       // full colour set with no buildings pays double rent
+  theme: 'classic',     // board theme (see themes.js)
 };
 
 const rand6 = () => 1 + Math.floor(Math.random() * 6);
@@ -172,7 +189,7 @@ function create(defs, options) {
   const g = {
     status: 'playing', options: o,
     players: defs.map((d, i) => ({
-      name: d.name, bot: !!d.bot, color: COLORS[i], icon: d.icon || ICONS[i],
+      name: d.name, bot: !!d.bot, level: d.level || 'medium', color: COLORS[i], icon: d.icon || ICONS[i],
       cash: o.startCash, pos: 0, inJail: false, jailTurns: 0, jailCards: [], bankrupt: false,
     })),
     props: SPACES.map(s => (s.group ? { owner: -1, houses: 0, mortgaged: false } : null)),
@@ -182,6 +199,7 @@ function create(defs, options) {
     decks: { chance: shuffle([...Array(16).keys()]), chest: shuffle([...Array(16).keys()]) },
     buy: null, auction: null, auctionQueue: [], afterAuction: 'post',
     debt: null, trade: null, log: [], winner: -1, lastCard: null, cardSeq: 0,
+    buildLog: [], tradeMemory: [], hold: false,
   };
   if (o.randomOrder) shuffle(g.players);
   if (o.dealProps > 0) {
@@ -389,6 +407,7 @@ function nextTurn(g) {
   do { i = (i + 1) % n; } while (g.players[i].bankrupt);
   g.turn = i;
   g.doubles = 0; g.rolledDoubles = false; g.turnNo++;
+  g.buildLog = [];   // building purchases can be undone only until the turn ends
   g.phase = 'roll'; g.buy = null; g.afterAuction = 'post';
   log(g, `${g.players[i].name}'s turn.`);
 }
@@ -529,6 +548,15 @@ function declareBankrupt(g, pi) {
 
 // ---------------------------------------------------------------- property management
 
+// The building purchase this player could still undo this turn (most recent first), or null.
+function lastBuild(g, pi) {
+  const ops = (g.buildLog || []).filter(o => o.pi === pi);
+  const op = ops[ops.length - 1];
+  if (!op) return null;
+  const pr = g.props[op.idx];
+  return pr && pr.owner === pi && pr.houses === op.after ? op : null;
+}
+
 // Validates (and unless dry, performs) a build / sell / mortgage / unmortgage.
 function manage(g, as, type, i, dry) {
   const sp = SPACES[i], pr = g.props[i], p = g.players[as];
@@ -549,6 +577,7 @@ function manage(g, as, type, i, dry) {
       p.cash -= sp.hc;
       if (pr.houses === 4) { g.hotelsLeft--; g.housesLeft += 4; } else g.housesLeft--;
       pr.houses++;
+      (g.buildLog = g.buildLog || []).push({ pi: as, idx: i, cost: sp.hc, hotel: pr.houses === 5, after: pr.houses });
       log(g, `${p.name} built a ${pr.houses === 5 ? 'hotel' : 'house'} on ${sp.name}.`);
       return null;
     }
@@ -700,6 +729,21 @@ function run(g, as, m) {
     }
     case 'build': case 'sell': case 'mortgage': case 'unmortgage':
       return manage(g, as, m.type, m.idx, false);
+    case 'undoBuild': {
+      if (g.phase === 'auction') return 'Not during an auction';
+      const op = lastBuild(g, as);
+      if (!op) return 'Nothing to undo. Purchases can only be undone before the turn ends.';
+      const pr = g.props[op.idx], sp = SPACES[op.idx];
+      if (op.hotel) {
+        if (g.housesLeft < 4) return 'Not enough houses in the bank to undo the hotel';
+        g.hotelsLeft++; g.housesLeft -= 4;
+      } else g.housesLeft++;
+      pr.houses--;
+      p.cash += op.cost;
+      g.buildLog.splice(g.buildLog.indexOf(op), 1);
+      log(g, `${p.name} undid the ${op.hotel ? 'hotel' : 'house'} on ${sp.name} and got $${op.cost} back.`);
+      return null;
+    }
     case 'propose': {
       if (g.trade) return 'A trade is already pending';
       if (g.phase === 'auction') return 'Not during an auction';
@@ -720,6 +764,8 @@ function run(g, as, m) {
     case 'tradeDecline': {
       if (!g.trade || (g.trade.to !== as && g.trade.from !== as)) return 'No trade';
       log(g, `${g.players[g.trade.to].name} declined the trade${g.trade.from === as ? ' (cancelled)' : ''}.`);
+      // computer players remember refused offers so they don't repeat them
+      g.tradeMemory = (g.tradeMemory || []).concat(JSON.stringify([g.trade.from, g.trade.to, g.trade.offer, g.trade.request])).slice(-40);
       g.trade = null;
       return null;
     }
@@ -747,79 +793,219 @@ function exec(g, as, m) {
 }
 
 // ---------------------------------------------------------------- bots
+// Computer players have a skill level, stored on the player as p.level:
+//   easy   - plays on gut feel: skips some buys, bids low, builds slowly, never proposes trades,
+//            and accepts any trade that looks "fair on paper" (sticker prices only)
+//   medium - the classic computer: buys when it has a cushion, builds steadily, offers simple trades
+//   hard   - plays to win: values colour sets and blocking, fights for monopolies at auction, builds fast on
+//            the best sets, stays in jail late in the game, raises cash smartly, and judges every trade by how it
+//            changes its position (completing its sets, denying yours, swaps that help both sides)
+
+const lvl = p => (p && p.level) || 'medium';
+
+// How valuable each colour group is to hold (relative to its price), and the total price of each group.
+const GW = { brown: 1.0, lblue: 1.1, pink: 1.25, orange: 1.5, red: 1.4, yellow: 1.3, green: 1.2, dblue: 1.3, rr: 0.9, util: 0.5 };
+const GSUM = {};
+Object.keys(GROUPS).forEach(k => { GSUM[k] = GROUPS[k].reduce((s, i) => s + SPACES[i].price, 0); });
+// share of the full-set bonus you get for holding N of the group
+const SET_CURVE = { 2: [0, 0.05, 1], 3: [0, 0.04, 0.22, 1], 4: [0, 0.05, 0.15, 0.35, 0.7] };
+const setBonus = (group, cnt) => (SET_CURVE[GROUPS[group].length][cnt] || 0) * GSUM[group] * GW[group] * (group === 'util' ? 0.5 : group === 'rr' ? 1 : 0.9);
+const threat = group => GSUM[group] * GW[group] * (group === 'rr' ? 0.2 : group === 'util' ? 0.08 : 0.4);
+const naive = s => s.cash + s.cards * 50 + s.props.reduce((v, i) => v + SPACES[i].price, 0);
+
+// A rough "how strong is this player's property position" score (cash not included).
+function portfolio(g, X) {
+  let v = 0;
+  for (const group of Object.keys(GROUPS)) {
+    const mem = GROUPS[group], size = mem.length, counts = {};
+    let cnt = 0;
+    for (const j of mem) {
+      const o = g.props[j].owner;
+      if (o === X) { cnt++; v += SPACES[j].price * (g.props[j].mortgaged ? 0.55 : 1) + g.props[j].houses * (SPACES[j].hc || 0) * 0.9; }
+      if (o >= 0) counts[o] = (counts[o] || 0) + 1;
+    }
+    v += setBonus(group, cnt);
+    const full = Object.keys(counts).find(o => counts[o] === size);
+    if (full !== undefined && +full !== X) v -= threat(group);                                  // someone else owns the whole set
+    else if (cnt === 1 && Object.keys(counts).some(o => +o !== X && counts[o] === size - 1)) v += threat(group) * 0.35;   // we are blocking them
+  }
+  return v;
+}
+
+// How much better (or worse) off player X would be if trade t went through.
+function tradeDelta(g, X, t) {
+  const before = portfolio(g, X);
+  t.offer.props.forEach(i => { g.props[i].owner = t.to; });
+  t.request.props.forEach(i => { g.props[i].owner = t.from; });
+  const after = portfolio(g, X);
+  t.offer.props.forEach(i => { g.props[i].owner = t.from; });
+  t.request.props.forEach(i => { g.props[i].owner = t.to; });
+  const gain = X === t.from ? t.request : t.offer, give = X === t.from ? t.offer : t.request;
+  return after - before + gain.cash - give.cash + 50 * (gain.cards - give.cards);
+}
+
+function botAcceptsTrade(g, t) {
+  const X = t.to, p = g.players[X], L = lvl(p);
+  if (L === 'easy') return naive(t.offer) >= naive(t.request) * 0.9;
+  if (p.cash - t.request.cash + t.offer.cash < 50) return false;
+  const d = tradeDelta(g, X, t), base = Math.max(naive(t.request), 50);
+  return L === 'hard' ? d >= Math.max(30, 0.15 * base) : d >= Math.max(15, 0.08 * base);
+}
+
+const tradeable = (g, pi) => owned(g, pi).filter(i => !hasBuildings(g, SPACES[i].group));
+
+// Look for a trade that helps the bot and that the other player would plausibly take: a single property for cash,
+// or (for hard bots) property swaps, with cash added to even things out.
+function botTradeIdea(g, pi) {
+  const p = g.players[pi], L = lvl(p);
+  if (L === 'easy') return null;
+  const reserve = L === 'hard' ? 200 : 150;
+  const remembered = new Set(g.tradeMemory || []);
+  const mine = tradeable(g, pi);
+  const gives = [[]];
+  mine.forEach(a => gives.push([a]));
+  if (L === 'hard') for (let a = 0; a < mine.length; a++) for (let b = a + 1; b < mine.length; b++) gives.push([mine[a], mine[b]]);
+  let best = null;
+  for (const y of alive(g)) {
+    if (y === pi) continue;
+    const Y = g.players[y];
+    for (const j of tradeable(g, y)) {
+      const probe = { from: pi, to: y, offer: { cash: 0, props: [], cards: 0 }, request: { cash: 0, props: [j], cards: 0 } };
+      if (tradeDelta(g, pi, probe) - SPACES[j].price < 40) continue;   // not worth chasing
+      for (const gv of gives) {
+        const t = { from: pi, to: y, offer: { cash: 0, props: gv, cards: 0 }, request: { cash: 0, props: [j], cards: 0 } };
+        const margin = Math.max(15, 0.08 * naive(t.request));
+        const dY = tradeDelta(g, y, t);
+        let c;   // cash I add (positive) or ask for (negative) to even it out
+        if (dY >= margin) c = -Math.min(Math.floor((dY - margin) * 0.5 / 10) * 10, Math.max(0, Y.cash - 50));
+        else c = Math.ceil((margin - dY) / 10) * 10;
+        const dX0 = tradeDelta(g, pi, t), N0 = naive(t.offer);
+        if (c > 0) {   // can't afford the "ideal" price? offer the most we comfortably can and still come out ahead
+          const afford = Math.floor((p.cash - reserve) / 10) * 10;
+          const worth = Math.floor(Math.min(dX0 - 30, (dX0 - 0.12 * N0) / 1.12) / 10) * 10;
+          c = Math.min(c, afford, worth);
+          if (c < 10) continue;
+          t.offer.cash = c;
+        } else if (c < 0) t.request.cash = -c;
+        if (naive(t.offer) < naive(t.request) * 0.9) continue;   // never make an insulting lowball offer
+        const dX = tradeDelta(g, pi, t);
+        if (dX < Math.max(30, 0.12 * Math.max(naive(t.offer), 60))) continue;
+        if (remembered.has(JSON.stringify([pi, y, t.offer, t.request]))) continue;
+        if (checkSide(g, pi, t.offer) || checkSide(g, y, t.request)) continue;
+        if (!best || dX > best.dX) best = { dX, t };
+      }
+    }
+  }
+  return best ? { type: 'propose', to: best.t.to, offer: best.t.offer, request: best.t.request } : null;
+}
+
+// How a property fits this player's plans: does it complete their set, or stop an opponent from completing one?
+function standing(g, pi, idx) {
+  const mem = GROUPS[SPACES[idx].group];
+  const mineN = mem.filter(j => j !== idx && g.props[j].owner === pi).length;
+  const blocks = mem.length >= 2 && alive(g).some(o => o !== pi && mem.filter(j => j !== idx && g.props[j].owner === o).length === mem.length - 1);
+  return { mineN, completes: mineN === mem.length - 1, blocks };
+}
+
+const BUILD_ORDER = ['orange', 'red', 'lblue', 'pink', 'yellow', 'green', 'dblue', 'brown'];
+const lateGame = g => OWNABLE.filter(i => g.props[i].owner === -1).length <= 6;
 
 function botStep(g) {
   if (g.status !== 'playing') return false;
   if (g.trade && g.players[g.trade.to].bot) {
-    const t = g.trade;
-    const val = s => s.cash + s.cards * 50 + s.props.reduce((v, i) => v + SPACES[i].price, 0);
-    // never give up a property that is part of a set we're close to completing
-    const breaksSet = t.request.props.some(i => {
-      const grp = GROUPS[SPACES[i].group];
-      const need = grp.length === 2 ? 2 : grp.length - 1;
-      return grp.filter(j => g.props[j].owner === t.to).length >= need;
-    });
-    exec(g, t.to, { type: !breaksSet && val(t.offer) >= val(t.request) * 1.25 ? 'tradeAccept' : 'tradeDecline' });
+    exec(g, g.trade.to, { type: botAcceptsTrade(g, g.trade) ? 'tradeAccept' : 'tradeDecline' });
     if (g.trade) g.trade = null;
     return true;
   }
   if (g.phase === 'auction') {
-    const a = g.auction, pi = a.cur, p = g.players[pi];
+    const a = g.auction, pi = a.cur, p = g.players[pi], L = lvl(p);
     if (!p.bot) return false;
-    const sp = SPACES[a.idx];
-    const grp = GROUPS[sp.group];
-    const completes = grp.filter(j => j !== a.idx).every(j => g.props[j].owner === pi);
-    const value = sp.price * (completes ? 1.5 : 0.85);
-    const max = Math.min(value, p.cash - 20);
+    const sp = SPACES[a.idx], st = standing(g, pi, a.idx);
+    let value, keep;
+    if (L === 'easy') { value = sp.price * (0.5 + 0.3 * (((a.idx * 7 + g.turnNo * 3) % 10) / 10)); keep = 60; }
+    else if (L === 'hard') { value = sp.price * (st.completes ? 2.0 : st.blocks ? 1.35 : 0.9 + 0.12 * st.mineN); keep = st.completes ? 20 : 100; }
+    else { value = sp.price * (st.completes ? 1.5 : 0.85); keep = 20; }
+    const max = Math.min(value, p.cash - keep);
     const next = a.high === 0 ? Math.max(10, Math.floor(sp.price * 0.2 / 10) * 10) : a.high + 10;
     exec(g, pi, next <= max ? { type: 'bid', amount: next } : { type: 'pass' });
     return true;
   }
-  const pi = g.turn, p = g.players[pi];
+  const pi = g.turn, p = g.players[pi], L = lvl(p);
   if (!p.bot) return false;
   switch (g.phase) {
     case 'roll':
       if (p.inJail) {
         if (p.jailCards.length) { exec(g, pi, { type: 'useCard' }); return true; }
-        if (p.cash > 600) { exec(g, pi, { type: 'payJail' }); return true; }
+        const fine = jailFine(g);
+        const pay = L === 'hard' ? !lateGame(g) && p.cash > fine + 300 : L === 'easy' ? p.cash > fine + 150 : p.cash > 600;
+        if (pay) { exec(g, pi, { type: 'payJail' }); return true; }
       }
       exec(g, pi, { type: 'roll' });
       return true;
     case 'buy': {
-      const price = SPACES[g.buy.idx].price;
-      exec(g, pi, { type: p.cash - price >= 100 ? 'buy' : 'decline' });
+      const idx = g.buy.idx, price = SPACES[idx].price, left = p.cash - price;
+      let yes;
+      if (L === 'easy') yes = left >= 50 && (((idx * 5 + g.turnNo) % 10) < 7);
+      else if (L === 'hard') {
+        const st = standing(g, pi, idx), late = g.props.some(pr => pr && pr.houses >= 3);
+        const reserve = late ? 250 : 120;
+        yes = left >= 0 && (st.completes || (st.blocks && left >= 50) || (st.mineN >= 1 && left >= reserve * 0.7) || left >= reserve);
+      } else yes = left >= 100;
+      exec(g, pi, { type: yes ? 'buy' : 'decline' });
       return true;
     }
     case 'tax':
       exec(g, pi, { type: incomeTaxPercent(g, pi) < 200 ? 'taxPercent' : 'taxFlat' });
       return true;
     case 'debt': {
-      const mine = owned(g, pi).sort((a, b) => g.props[b].houses - g.props[a].houses);
-      for (const i of mine) if (g.props[i].houses > 0 && exec(g, pi, { type: 'sell', idx: i }) === null) return true;
-      for (const i of mine) if (!g.props[i].mortgaged && exec(g, pi, { type: 'mortgage', idx: i }) === null) return true;
+      const mine = owned(g, pi);
+      const sellFirst = mine.slice().sort((a, b) => g.props[b].houses - g.props[a].houses);
+      const sellHouses = () => { for (const i of sellFirst) if (g.props[i].houses > 0 && exec(g, pi, { type: 'sell', idx: i }) === null) return true; return false; };
+      const mortgage = list => { for (const i of list) if (!g.props[i].mortgaged && exec(g, pi, { type: 'mortgage', idx: i }) === null) return true; return false; };
+      if (L === 'hard') {
+        // cheapest to lose first: lots that aren't part of a complete set, then houses, then everything else
+        const loose = mine.filter(i => !ownsGroup(g, pi, SPACES[i].group)).sort((a, b) => SPACES[a].price - SPACES[b].price);
+        if (mortgage(loose) || sellHouses() || mortgage(mine)) return true;
+      } else if (sellHouses() || mortgage(mine)) return true;
       exec(g, pi, { type: 'bankrupt' });
       return true;
     }
     case 'post': {
-      const reserve = 250;
+      const reserve = L === 'hard' ? 180 : L === 'easy' ? 400 : 250;
       for (const i of owned(g, pi)) {
-        if (g.props[i].mortgaged && p.cash - unmortgageCost(i) >= reserve + 100) {
+        if (g.props[i].mortgaged && p.cash - unmortgageCost(i) >= reserve + (L === 'hard' ? 50 : 100)) {
           if (exec(g, pi, { type: 'unmortgage', idx: i }) === null) return true;
         }
       }
-      const buildable = owned(g, pi)
-        .filter(i => SPACES[i].type === 'prop' && g.props[i].houses < 5)
-        .sort((a, b) => g.props[a].houses - g.props[b].houses);
-      for (const i of buildable) {
-        if (p.cash - SPACES[i].hc >= reserve && manage(g, pi, 'build', i, true) === null) {
-          exec(g, pi, { type: 'build', idx: i });
-          return true;
+      let buildable = owned(g, pi).filter(i => SPACES[i].type === 'prop' && g.props[i].houses < 5);
+      if (L === 'hard') {
+        // aim for 3 houses on the strongest sets first, then keep going while the bank balance is healthy
+        buildable.sort((a, b) => ((g.props[a].houses >= 3) - (g.props[b].houses >= 3)) ||
+          (BUILD_ORDER.indexOf(SPACES[a].group) - BUILD_ORDER.indexOf(SPACES[b].group)) || (g.props[a].houses - g.props[b].houses));
+      } else buildable.sort((a, b) => g.props[a].houses - g.props[b].houses);
+      const slow = L === 'easy' && g.turnNo % 2 === 1;   // easy computers only build every other turn
+      if (!slow) {
+        for (const i of buildable) {
+          const hc = SPACES[i].hc, deep = g.props[i].houses >= 3;
+          if (p.cash - hc >= (L === 'hard' && deep ? 400 : reserve) && manage(g, pi, 'build', i, true) === null) {
+            exec(g, pi, { type: 'build', idx: i });
+            return true;
+          }
         }
       }
       if (g.botTradeAt !== g.turnNo && !g.rolledDoubles) {
         g.botTradeAt = g.turnNo;
-        const idea = botTradeIdea(g, pi);
-        if (idea && !g.trade && exec(g, pi, idea) === null) return true;
+        if (L === 'hard' || L === 'medium') {
+          const idea = botTradeIdea(g, pi);
+          if (idea && !g.trade) {
+            // don't pester people: offers to a human wait out a cooldown (computers can trade with each other freely)
+            const toHuman = !g.players[idea.to].bot;
+            const gap = L === 'hard' ? 12 : 16;
+            if (!toHuman || g.turnNo - (p.lastOffer == null ? -99 : p.lastOffer) >= gap) {
+              if (exec(g, pi, idea) === null) { if (toHuman) p.lastOffer = g.turnNo; return true; }
+            }
+          }
+        }
       }
       exec(g, pi, { type: g.rolledDoubles ? 'roll' : 'endTurn' });
       return true;
@@ -828,26 +1014,10 @@ function botStep(g) {
   return false;
 }
 
-// Offer cash for the single property that would complete one of the bot's colour sets.
-function botTradeIdea(g, pi) {
-  const p = g.players[pi];
-  for (const group of Object.keys(GROUPS)) {
-    const members = GROUPS[group];
-    const missing = members.filter(i => g.props[i].owner !== pi);
-    if (missing.length !== 1 || members.length < 2) continue;
-    const j = missing[0], owner = g.props[j].owner;
-    if (owner < 0 || g.players[owner].bankrupt || hasBuildings(g, group)) continue;
-    const cash = Math.round(SPACES[j].price * 2.5 / 10) * 10;
-    if (p.cash - cash < 150) continue;
-    return { type: 'propose', to: owner, offer: { cash, props: [], cards: 0 }, request: { cash: 0, props: [j], cards: 0 } };
-  }
-  return null;
-}
-
 return {
   SPACES, GROUPS, GROUP_COLORS, GROUP_NAMES, OWNABLE, CARDS, DEFAULTS, COLORS, ICONS,
   create, exec, botStep, manage, rentFor, netWorth, incomeTaxPercent, owned, ownsGroup, hasBuildings, alive,
-  mortgageValue, unmortgageCost,
+  mortgageValue, unmortgageCost, applyTheme, lastBuild, botAcceptsTrade, botTradeIdea, tradeDelta,
 };
 })();
 if (typeof module !== 'undefined') module.exports = Game;

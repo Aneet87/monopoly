@@ -151,13 +151,15 @@ function readOpts() {
   OPTS.forEach(([k]) => { const el = $('#o-' + k); if (el) s.opts[k] = el.checked; });
   ['startCash', 'dealProps'].forEach(k => { const el = $('#o-' + k); if (el) s.opts[k] = +el.value; });
   NUMS.forEach(([k]) => { const el = $('#o-' + k); if (el) s.opts[k] = +el.value; });
+  const th = $('#o-theme'); if (th) s.opts.theme = th.value;
 }
 function readSeats() {
   if (!net || net.role !== 'host' || net.started) return;
   net.seats.forEach((st, i) => {
-    const nm = $('#sname' + i), ic = $('#sicon' + i);
+    const nm = $('#sname' + i), ic = $('#sicon' + i), lv = $('#slevel' + i);
     if (nm) st.name = nm.value.slice(0, 16);
     if (ic) st.icon = ic.value;
+    if (lv) st.level = lv.value;
   });
 }
 
@@ -182,6 +184,21 @@ function homeHTML() {
       <button class="bigstart" data-a="hostRoom">Create a room</button></div>`;
 }
 
+const LEVELS = [['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']];
+const LEVEL_TAG = { easy: 'EASY', medium: 'MED', hard: 'HARD' };
+const themedName = (key, i) => (THEMES[key] && THEMES[key].names[i]) || G.SPACES[i].name;
+
+// Switch the board theme: renames spaces/cards in the engine and recolours the page.
+function setTheme(key) {
+  const T = THEMES[key] || THEMES.classic;
+  G.applyTheme(THEMES[key] ? key : 'classic');
+  ICON.rr = T.rr; ICON.util = T.util;
+  const st = document.documentElement.style;
+  st.setProperty('--accent', T.accent); st.setProperty('--accent2', T.accent2);
+  st.setProperty('--c1', T.c1); st.setProperty('--c2', T.c2); st.setProperty('--c3', T.c3);
+  ui.themeKey = THEMES[key] ? key : 'classic';
+}
+
 function seatTag(st) {
   return st.kind === 'host' ? 'You (host)' : st.kind === 'remote' ? (st.away ? 'Disconnected' : '🟢 Online') : st.kind === 'local' ? 'On this device' : '🤖 Computer';
 }
@@ -190,11 +207,17 @@ function hostLobbyHTML() {
   const s = ui.setup, seats = net.seats;
   const rows = seats.map((st, i) => {
     const editable = st.kind !== 'remote';
+    const level = st.kind === 'bot'
+      ? `<select id="slevel${i}" title="Computer skill">${LEVELS.map(([k, t]) => `<option value="${k}" ${k === (st.level || 'medium') ? 'selected' : ''}>${t}</option>`).join('')}</select>` : '';
     return `<div class="prow">${editable
       ? `<select class="icon" id="sicon${i}">${tokenOptions(st.icon)}</select><input type="text" id="sname${i}" value="${esc(st.name)}" maxlength="16">`
       : `<span class="ic">${st.icon}</span><span class="nm">${esc(st.name)}</span>`}
-      <span class="seat-tag">${seatTag(st)}</span>${st.kind === 'host' ? '' : `<button class="sm sec" data-a="rmSeat" data-i="${i}" title="Remove">✕</button>`}</div>`;
+      ${level}<span class="seat-tag">${st.kind === 'bot' ? '🤖' : seatTag(st)}</span>${st.kind === 'host' ? '' : `<button class="sm sec" data-a="rmSeat" data-i="${i}" title="Remove">✕</button>`}</div>`;
   }).join('');
+  const T = THEMES[s.opts.theme] || THEMES.classic;
+  const themeCard = `<div class="card"><h3>Board theme</h3>
+      <div class="prow"><select id="o-theme" style="flex:1">${Object.keys(THEMES).map(k => `<option value="${k}" ${k === s.opts.theme ? 'selected' : ''}>${THEMES[k].emoji} ${THEMES[k].name}</option>`).join('')}</select></div>
+      <p class="hint" style="margin-bottom:0">${esc(T.blurb)}<br>Cheapest: <b>${esc(themedName(s.opts.theme, 1))}</b> · Priciest: <b>${esc(themedName(s.opts.theme, 39))}</b> · Rails: ${T.rr} ${esc(themedName(s.opts.theme, 5))}</p></div>`;
   const opts = OPTS.map(([k, t, d]) => `
     <label class="opt"><input type="checkbox" id="o-${k}" ${s.opts[k] ? 'checked' : ''}><span>${t}<small>${d}</small></span></label>`).join('');
   return `
@@ -206,6 +229,7 @@ function hostLobbyHTML() {
     <div class="card"><h3>Players (${seats.length}/4)</h3>${rows}
       <div class="prow">${seats.length < 4 ? '<button class="sec" data-a="addBot">+ Computer player</button><button class="sec" data-a="addLocal">+ Another player on this device</button>' : ''}</div>
       <p class="hint">Friends appear here as soon as they join with your code.</p></div>
+    ${themeCard}
     <div class="card"><h3>Game style</h3>
       <div class="presets">${Object.keys(PRESETS).map(n => `<button class="sec" data-a="preset" data-n="${esc(n)}">${n}</button>`).join('')}</div></div>
     <div class="card"><h3>Rules</h3><div class="opts">${opts}</div>
@@ -222,14 +246,24 @@ function hostLobbyHTML() {
 
 function guestLobbyHTML() {
   const l = net.lobby || { seats: [], you: -1 };
-  const rows = l.seats.map((st, i) => `<div class="prow"><span class="ic">${st.icon}</span><span class="nm">${esc(st.name)}${i === l.you ? ' <b>(you)</b>' : ''}</span><span class="seat-tag">${seatTag(st)}</span></div>`).join('');
+  const rows = l.seats.map((st, i) => `<div class="prow"><span class="ic">${st.icon}</span><span class="nm">${esc(st.name)}${i === l.you ? ' <b>(you)</b>' : ''}</span><span class="seat-tag">${st.kind === 'bot' ? `🤖 ${LEVEL_TAG[st.level || 'medium']}` : seatTag(st)}</span></div>`).join('');
   return `
     <h1>🌐 Monopoly Online</h1>
     <div class="card invite"><h3>You're in room</h3><div class="code">${esc(net.code)}</div>
       <p class="hint" style="text-align:center">${net.status === 'online' ? '🟢 Connected' : '🟠 Reconnecting…'}</p></div>
     <div class="card"><h3>Players</h3>${rows || '<div class="empty">Connecting…</div>'}
+      ${l.theme && THEMES[l.theme] ? `<p class="hint">Board: ${THEMES[l.theme].emoji} ${esc(THEMES[l.theme].name)}</p>` : ''}
       <p class="hint">⏳ Waiting for the host to start the game. Keep this page open.</p></div>
     <p class="hint" style="text-align:center"><button class="sm sec" data-a="leave">Leave room</button></p>`;
+}
+
+function claimHTML() {
+  const rows = (net.claims || []).map(c => `<div class="prow"><span class="ic">${c.icon}</span><span class="nm">${esc(c.name)}</span><button class="ok" data-a="claimSeat" data-p="${c.pi}">That's me</button></div>`).join('');
+  return `
+    <h1>🌐 Monopoly Online</h1>
+    <div class="card"><h3>Room ${esc(net.code)} — game in progress</h3>
+      <p style="margin-top:0">This game already started. Which player are you? Only players who are away are shown.</p>${rows}</div>
+    <p class="hint" style="text-align:center"><button class="sm sec" data-a="leave">Back</button></p>`;
 }
 
 function renderSetup(skipRead) {
@@ -237,6 +271,7 @@ function renderSetup(skipRead) {
   let html;
   if (ui.screen === 'hostlobby' && net) html = hostLobbyHTML();
   else if (ui.screen === 'guestlobby' && net) html = guestLobbyHTML();
+  else if (ui.screen === 'claim' && net) html = claimHTML();
   else html = homeHTML();
   $('#setup').innerHTML = html;
   $('#setup').hidden = false; $('#game').hidden = true;
@@ -294,9 +329,11 @@ function resumeHost() {
     net = { role: 'host', code: sv.code, peer, conns: {}, seats: [], started: true, queue: [], timers: {}, owner: sv.owner, mine: new Set() };
     sv.owner.forEach((o, i) => { if (o && (o.kind === 'host' || o.kind === 'local')) net.mine.add(i); });
     wireHostPeer(peer);
-    sv.owner.forEach((o, i) => {   // friends have a short time to rejoin, then the computer covers for them
-      if (o && o.kind === 'remote' && !g.players[i].bankrupt) { g.players[i].away = true; net.timers[i] = setTimeout(() => takeover(i), AWAY_GRACE_MS * 1.5); }
-    });
+    // Friends haven't reconnected yet: hold the game until they are back (or the host chooses to start anyway).
+    sv.owner.forEach((o, i) => { if (o && o.kind === 'remote' && !g.players[i].bankrupt && !g.players[i].bot) g.players[i].away = true; });
+    g.hold = waitingFor().length > 0;
+    if (g.hold) g.log.push('Game resumed. Waiting for everyone to rejoin…');
+    setTheme(g.options.theme);
     ui.msg = ''; ui.seenCard = g.lastCard ? g.lastCard.seq : 0;
     enterGame();
     broadcast();
@@ -304,8 +341,23 @@ function resumeHost() {
 }
 
 function sendLobbyAll() {
-  const seats = net.seats.map(s => ({ name: s.name, icon: s.icon, kind: s.kind, away: !!s.away }));
-  net.seats.forEach((st, i) => { if (st.kind === 'remote') sendTo(net.conns[st.cid], { t: 'lobby', seats, you: i }); });
+  const seats = net.seats.map(s => ({ name: s.name, icon: s.icon, kind: s.kind, away: !!s.away, level: s.level }));
+  const theme = ui.setup.opts.theme;
+  net.seats.forEach((st, i) => { if (st.kind === 'remote') sendTo(net.conns[st.cid], { t: 'lobby', seats, you: i, theme }); });
+}
+
+// People (not computers) whose seats are waiting for someone to come back to them.
+const waitingFor = () => (g ? g.players.map((p, i) => i).filter(i => net.owner[i] && net.owner[i].kind === 'remote' && g.players[i].away && !g.players[i].bot && !g.players[i].bankrupt) : []);
+
+// Seats a newcomer may take over: friends who left (the computer is covering for them) or who are disconnected.
+const claimable = () => g.players.map((p, i) => i).filter(i => net.owner[i] && net.owner[i].kind === 'remote' && !g.players[i].bankrupt && (g.players[i].away || g.players[i].bot));
+
+function checkHold() {
+  if (!g || !g.hold || waitingFor().length) return;
+  g.hold = false;
+  g.log.push('Everyone is back. Game on!');
+  broadcast();
+  if (!ui.busy) { renderAll(); scheduleBots(); }
 }
 
 function attachConn(cid, conn) {
@@ -321,6 +373,7 @@ function rejectConn(conn, reason) {
 function hostData(conn, m) {
   if (!m || !net || net.role !== 'host') return;
   if (m.t === 'join') { hostJoin(conn, m); return; }
+  if (m.t === 'claim') { hostClaim(conn, m); return; }
   const cid = conn._cid;
   if (!cid || net.conns[cid] !== conn) return;
   if (m.t === 'act') { net.queue.push({ cid, as: m.as, msg: m.msg }); hostDrain(); }
@@ -347,14 +400,34 @@ function hostJoin(conn, m) {
     return;
   }
   const pi = net.owner.findIndex(o => o && o.kind === 'remote' && o.cid === cid);
-  if (pi < 0) { rejectConn(conn, 'That game has already started.'); return; }
+  if (pi < 0) {
+    // A new device (or cleared browser): let them pick which absent player they are.
+    const open = claimable();
+    if (!open.length) { rejectConn(conn, 'That game has already started and every player is connected.'); return; }
+    sendTo(conn, { t: 'claimlist', seats: open.map(i => ({ pi: i, name: g.players[i].name, icon: g.players[i].icon })) });
+    return;
+  }
+  seatReturned(conn, cid, pi);
+}
+
+function seatReturned(conn, cid, pi) {
   attachConn(cid, conn);
   clearTimeout(net.timers[pi]);
   const p = g.players[pi];
   if (p.away || p.bot) { p.away = false; p.bot = false; g.log.push(`${p.name} is back in the game.`); }
   sendTo(conn, { t: 'start', mine: [pi], g: pubG() });
   broadcast();
+  checkHold();
   if (!ui.busy) { renderAll(); scheduleBots(); }
+}
+
+// A returning player picks their seat from the list of absent players.
+function hostClaim(conn, m) {
+  if (!net.started || !g) return;
+  const cid = String(m.cid || '').slice(0, 40), pi = +m.pi;
+  if (!cid || !claimable().includes(pi)) { rejectConn(conn, 'That player is no longer available.'); return; }
+  net.owner[pi].cid = cid;
+  seatReturned(conn, cid, pi);
 }
 
 function takeover(pi) {
@@ -362,8 +435,9 @@ function takeover(pi) {
   const p = g.players[pi];
   if (!p || p.bankrupt || p.bot) return;
   p.away = true; p.bot = true;
-  g.log.push(`${p.name} left, so the computer is playing for them.`);
+  g.log.push(`${p.name} is away, so the computer is playing for them until they return.`);
   broadcast();
+  checkHold();
   if (!ui.busy) { renderAll(); scheduleBots(); }
 }
 
@@ -393,6 +467,7 @@ function hostLeft(cid) {
 function hostDrain() {
   while (net && net.role === 'host' && g && !ui.busy && net.queue.length) {
     const { cid, as, msg } = net.queue.shift();
+    if (g.hold) { sendTo(net.conns[cid], { t: 'err', msg: 'The game is on hold until everyone has rejoined.' }); continue; }
     const o = net.owner[as];
     if (!o || o.kind !== 'remote' || o.cid !== cid) { sendTo(net.conns[cid], { t: 'err', msg: "That's not your player." }); continue; }
     const before = snap();
@@ -408,7 +483,8 @@ function hostStart() {
   const seats = net.seats;
   if (seats.length < 2) { toast('You need at least 2 players'); return; }
   if (new Set(seats.map(s => s.icon)).size !== seats.length) { toast('Each player needs a different token'); return; }
-  const defs = seats.map((s, i) => ({ name: s.name.trim() || `Player ${i + 1}`, bot: s.kind === 'bot', icon: s.icon }));
+  const defs = seats.map((s, i) => ({ name: s.name.trim() || `Player ${i + 1}`, bot: s.kind === 'bot', icon: s.icon, level: s.level || 'medium' }));
+  setTheme(ui.setup.opts.theme);
   g = G.create(defs, ui.setup.opts);
   // randomOrder may have shuffled the players, so match seats back up by token
   net.owner = g.players.map(p => { const s = seats.find(x => x.icon === p.icon); return { kind: s.kind, cid: s.cid || null }; });
@@ -428,7 +504,7 @@ function addSeat(kind) {
   const taken = new Set(net.seats.map(s => s.icon));
   const icon = TOKENS.find(t => !taken.has(t));
   const n = net.seats.filter(s => s.kind === kind).length + 1;
-  net.seats.push({ kind, cid: null, icon, name: kind === 'bot' ? `Computer ${n}` : `Local ${n}` });
+  net.seats.push({ kind, cid: null, icon, level: 'medium', name: kind === 'bot' ? `Computer ${n}` : `Local ${n}` });
   sendLobbyAll(); renderSetup();
 }
 function removeSeat(i) {
@@ -457,6 +533,7 @@ function guestFail(msg, forget) {
   if (forget) lsDel(GUEST_KEY);
   net = null; g = null; ui.busy = false;
   ['#overlay', '#modal', '#cardpop'].forEach(s => { $(s).innerHTML = ''; }); $('#banner').className = '';
+  setTheme('classic');
   ui.screen = 'home'; ui.msg = msg; render();
 }
 
@@ -510,13 +587,17 @@ function guestData(n, m) {
       if (!n.started) { ui.screen = 'guestlobby'; ui.msg = ''; renderSetup(); }
       break;
     case 'rejected': guestFail(m.reason || 'Could not join that room.', true); break;
+    case 'claimlist':   // the host doesn't know this device: pick which player you are
+      n.joined = true; n.claims = m.seats || []; ui.screen = 'claim'; ui.msg = ''; renderSetup();
+      break;
     case 'start':
       n.joined = true; n.started = true; n.status = 'online'; n.mine = new Set(m.mine || []);
       lsSet(GUEST_KEY, { code: n.code, cid: n.cid });
-      if (!g) { g = m.g; ui.seenCard = g.lastCard ? g.lastCard.seq : 0; enterGame(); } else applyState(m.g);
+      if (!g) { setTheme(m.g.options && m.g.options.theme); g = m.g; ui.seenCard = g.lastCard ? g.lastCard.seq : 0; enterGame(); } else applyState(m.g);
       break;
     case 'state': if (n.started) applyState(m.g); break;
     case 'err': toast(m.msg || 'Not allowed'); break;
+    case 'paused': guestFail('⏸ The host paused the game and saved it. When they are ready to continue, open this page and tap "Rejoin room".', false); break;
     case 'closed': guestFail('The host ended the game.', true); break;
   }
 }
@@ -540,19 +621,26 @@ function netDrain() {
   present(before);
 }
 
-// Leave the room (host closing it ends the game for everyone).
-function leaveToHome(msg) {
+// Leave the room. how: 'end' (default) = game over / host closes it for everyone;
+// 'pause' = host saves the game to continue later; 'leave' = a friend steps out but can rejoin their player.
+function leaveToHome(msg, how) {
   const n = net;
   if (n) {
     n.left = true; clearTimeout(n.retryTimer);
     Object.values(n.timers || {}).forEach(clearTimeout);
-    if (n.role === 'host') { Object.values(n.conns).forEach(c => sendTo(c, { t: 'closed' })); lsDel(HOST_KEY); }
-    else { sendTo(n.conn, { t: 'leave' }); lsDel(GUEST_KEY); }
+    if (n.role === 'host') {
+      if (how === 'pause') { save(); Object.values(n.conns).forEach(c => sendTo(c, { t: 'paused' })); }
+      else { Object.values(n.conns).forEach(c => sendTo(c, { t: 'closed' })); lsDel(HOST_KEY); }
+    } else {
+      sendTo(n.conn, { t: 'leave' });
+      if (how !== 'leave' || !n.started) lsDel(GUEST_KEY);   // leaving mid-game keeps the room code so you can rejoin
+    }
     setTimeout(() => { try { n.peer.destroy(); } catch (e) { /* ignore */ } }, 500);
   }
   clearTimeout(ui.timer);
   net = null; g = null; ui.busy = false; ui.overlayKey = ''; ui.modal = null;
   ['#overlay', '#modal', '#cardpop'].forEach(s => { $(s).innerHTML = ''; }); $('#banner').className = '';
+  setTheme('classic');
   ui.screen = 'home'; ui.msg = msg || ''; render();
 }
 
@@ -573,6 +661,7 @@ function snap() {
 function act(as, msg) {
   if (ui.busy) return false;
   if (net && !mine(as)) { toast("That isn't your player"); return false; }
+  if (g.hold) { toast('The game is on hold until everyone rejoins.' + (net && net.role === 'host' ? ' Tap "Start anyway" to continue.' : '')); return false; }
   if (net && net.role === 'guest') {          // friends ask the host to run the move
     sendTo(net.conn, { t: 'act', as, msg });
     return true;
@@ -588,7 +677,7 @@ function act(as, msg) {
 function scheduleBots() {
   clearTimeout(ui.timer);
   if (!g || g.status !== 'playing' || ui.busy) return;
-  if (!net || net.role !== 'host' || !net.started) return;   // only the host's browser runs computer players
+  if (!net || net.role !== 'host' || !net.started || g.hold) return;   // only the host's browser runs computer players
   ui.timer = setTimeout(() => {
     if (ui.busy || !g) return;
     const before = snap();
@@ -859,7 +948,11 @@ function centerHTML() {
   if (ui.busy) {
     status = `${p.icon} ${esc(p.name)}`;
   } else {
-    switch (g.phase) {
+    if (g.hold && g.status === 'playing') {
+      const away = g.players.filter(x => x.away && !x.bot && !x.bankrupt).map(x => esc(x.name)).join(', ');
+      status = `⏸ Game on hold<small>Waiting for ${away || 'everyone'} to rejoin…</small>`;
+      if (net && net.role === 'host') btns = `<button data-a="unhold">▶ Start anyway</button>`;
+    } else switch (g.phase) {
       case 'roll':
         status = `${p.icon} ${esc(p.name)}'s turn${p.inJail ? `<small>In Jail (attempt ${p.jailTurns + 1}/3) — roll doubles, pay ${money(g.options.jailFine)}, or use a card</small>` : ''}`;
         if (human) {
@@ -900,14 +993,14 @@ function centerHTML() {
         status = `🏆 ${esc(g.players[g.winner].name)} wins!`;
         break;
     }
-    if (g.status === 'playing' && g.phase !== 'auction') {
+    if (g.status === 'playing' && g.phase !== 'auction' && !g.hold) {
       if (p.bot) status += '<small>🤖 Computer is thinking…</small>';
       else if (!human) status += p.away ? `<small>⏳ ${esc(p.name)} lost connection. Waiting for them to come back…</small>` : `<small>⏳ Waiting for ${esc(p.name)}…</small>`;
     }
   }
   const pot = g.options.freeParking ? `<div class="pot">🅿️ Free Parking pot: ${money(g.pot)}</div>` : '';
   return `<div id="center">
-    <div class="title">MONOPOLY</div>
+    <div class="title">MONOPOLY</div>${ui.themeKey && ui.themeKey !== 'classic' && THEMES[ui.themeKey] ? `<div class="sub">${THEMES[ui.themeKey].emoji} ${esc(THEMES[ui.themeKey].name)}</div>` : ''}
     <div class="dicebox">${dieHTML(g.dice[0])}${dieHTML(g.dice[1])}</div>
     <div class="status">${status}</div>
     <div class="actions">${btns}</div>${pot}</div>`;
@@ -916,7 +1009,7 @@ function centerHTML() {
 function sideHTML() {
   const players = g.players.map((p, i) => {
     const dots = G.owned(g, i).map(j => `<i class="${g.props[j].mortgaged ? 'm' : ''}" style="background:${GC[SP[j].group]}" data-a="deed" data-i="${j}" title="${esc(SP[j].name)}"></i>`).join('');
-    const tags = [net && net.mine.has(i) ? 'YOU' : '', p.away ? 'AWAY' : p.bot ? 'BOT' : '', p.inJail ? 'JAIL' : '', p.jailCards.length ? `🎟️×${p.jailCards.length}` : '', p.bankrupt ? 'OUT' : ''].filter(Boolean).map(t => `<span class="tag">${t}</span>`).join('');
+    const tags = [net && net.mine.has(i) ? 'YOU' : '', p.away ? 'AWAY' : p.bot ? `BOT · ${LEVEL_TAG[p.level || 'medium']}` : '', p.inJail ? 'JAIL' : '', p.jailCards.length ? `🎟️×${p.jailCards.length}` : '', p.bankrupt ? 'OUT' : ''].filter(Boolean).map(t => `<span class="tag">${t}</span>`).join('');
     const prev = ui.prevCash ? ui.prevCash[i] : null;
     const flash = prev == null || prev === p.cash ? '' : p.cash > prev ? 'up' : 'down';
     return `<div class="pl ${i === g.turn && !p.bankrupt && g.status === 'playing' ? 'turn' : ''} ${p.bankrupt ? 'out' : ''}" style="--c:${p.color}">
@@ -930,8 +1023,11 @@ function sideHTML() {
 
 function roomHTML() {
   if (!net) return '';
-  const st = net.role === 'guest' ? (net.status === 'online' ? '🟢 Connected to the host' : '🟠 Connection lost, reconnecting…') : '🟢 You are hosting. Keep this page open.';
-  return `<div class="panel room"><h4>Room <b class="rc">${esc(net.code)}</b> <button class="sm sec" data-a="${isWeb() ? 'copylink' : 'copycode'}">${isWeb() ? 'Copy invite link' : 'Copy code'}</button></h4><div class="empty">${st}</div></div>`;
+  const host = net.role === 'host';
+  const st = host ? '🟢 You are hosting. Keep this page open, or pause to save and continue later.' : (net.status === 'online' ? '🟢 Connected to the host' : '🟠 Connection lost, reconnecting…');
+  const away = host ? g.players.map((p, i) => i).filter(i => g.players[i].away && !g.players[i].bot && !g.players[i].bankrupt) : [];
+  const awayRow = away.map(i => `<div class="awayrow">⏳ ${esc(g.players[i].name)} is not connected <button class="sm" data-a="takeoverP" data-p="${i}">Computer plays for them</button></div>`).join('');
+  return `<div class="panel room"><h4>Room <b class="rc">${esc(net.code)}</b> <button class="sm sec" data-a="${isWeb() ? 'copylink' : 'copycode'}">${isWeb() ? 'Copy invite link' : 'Copy code'}</button>${host ? ' <button class="sm sec" data-a="pause" title="Save the game and continue another day">⏸ Pause &amp; save</button>' : ''}</h4><div class="empty">${st}</div>${awayRow}</div>`;
 }
 
 function renderSide() {
@@ -972,8 +1068,10 @@ function manageHTML() {
       <span class="n ${pr.mortgaged ? 'm' : ''}">${esc(s.name)}${hs}</span><span class="btns">${b}</span></div>`;
   }).join('') || '<div class="empty">No properties yet.</div>';
   const others = G.alive(g).length > 1 && canAct && !g.trade && g.phase !== 'auction';
+  const ub = canAct && G.lastBuild(g, mp);
+  const undoRow = ub ? `<div class="undo"><button class="sm sec" data-a="undoBuild" data-p="${mp}">↩ Undo: ${ub.hotel ? 'hotel' : 'house'} on ${esc(SP[ub.idx].name)} (+${money(ub.cost)})</button><small>Changed your mind? You can undo purchases until your turn ends.</small></div>` : '';
   return `<div class="panel"><h4>Properties ${others ? `<button class="sm" data-a="trade" data-p="${mp}">🤝 Propose trade</button>` : ''}</h4>
-    <div class="tabs">${tabs}</div>${rows}
+    <div class="tabs">${tabs}</div>${undoRow}${rows}
     ${p.bot ? '<div class="empty">Computer players manage their own properties.</div>' : !mine(mp) ? `<div class="empty">Only ${esc(p.name)} can manage these.</div>` : ''}</div>`;
 }
 
@@ -1116,6 +1214,16 @@ document.addEventListener('click', e => {
     case 'addLocal': addSeat('local'); return;
     case 'rmSeat': removeSeat(+d.i); return;
     case 'startOnline': hostStart(); return;
+    case 'claimSeat': if (net && net.role === 'guest') sendTo(net.conn, { t: 'claim', cid: net.cid, pi: +d.p }); return;
+    case 'pause':
+      if (net && net.role === 'host' && confirm('Pause and save the game? Everyone will be sent back to the menu. You can continue later: open this page and click "Resume hosting". Your friends click "Rejoin room".')) {
+        leaveToHome('⏸ Game paused and saved on this device. To continue, open this page and click "Resume hosting". Your friends should open the game and click "Rejoin room".', 'pause');
+      }
+      return;
+    case 'unhold':
+      if (net && net.role === 'host' && g) { g.hold = false; g.log.push('The host started the game without waiting.'); save(); broadcast(); renderAll(); scheduleBots(); }
+      return;
+    case 'takeoverP': if (net && net.role === 'host') takeover(+d.p); return;
     case 'preset': readSeats(); readOpts(); Object.assign(ui.setup.opts, PRESETS[d.n]); renderSetup(true); return;
     case 'leave':
       if (net && net.role === 'host' && !confirm('Close the room? Everyone will be disconnected.')) return;
@@ -1140,6 +1248,7 @@ document.addEventListener('click', e => {
     case 'bidc': act(g.auction.cur, { type: 'bid', amount: +$('#bidin').value }); break;
     case 'pass': act(g.auction.cur, { type: 'pass' }); break;
     case 'mg': act(+d.p, { type: d.t, idx: +d.i }); break;
+    case 'undoBuild': act(+d.p, { type: 'undoBuild' }); break;
     case 'tab': ui.tab = +d.p; renderSide(); break;
     case 'mute': sfx.toggle(); renderSide(); break;
     case 'deed': ui.modal = { deed: +d.i }; renderModal(); break;
@@ -1154,17 +1263,23 @@ document.addEventListener('click', e => {
     case 'tDecline': act(g.trade.to, { type: 'tradeDecline' }); break;
     case 'tCancel': act(g.trade.from, { type: 'tradeDecline' }); break;
     case 'newgame':
-      if (g.status === 'playing' && !confirm(net.role === 'host' ? 'End the game for everyone and close the room?' : 'Leave this game? The computer will take over your player.')) return;
-      leaveToHome();
+      if (g.status === 'playing') {
+        if (net.role === 'host') { if (!confirm('End the game for everyone and delete the save? (To stop for now and continue later, use "Pause & save" instead.)')) return; leaveToHome('', 'end'); }
+        else { if (!confirm('Leave this game? The computer plays for you until you come back. You can rejoin from the menu with the same room code.')) return; leaveToHome('You left the game. The computer is covering for you. Tap "Rejoin room" any time to come back.', 'leave'); }
+      } else leaveToHome('', 'end');
       break;
     case 'newgame2':
-      leaveToHome();
+      leaveToHome('', 'end');
       break;
   }
 });
 
 document.addEventListener('change', e => {
   const el = e.target;
+  if (el.id === 'o-theme' && ui.screen === 'hostlobby') {   // pick a board theme: preview its colours right away
+    readSeats(); readOpts(); setTheme(ui.setup.opts.theme); sendLobbyAll(); renderSetup(true);
+    return;
+  }
   if (!ui.trade || ui.modal !== 'trade' || !el.dataset.k) return;
   const side = ui.trade[el.dataset.k];
   if (el.dataset.i != null) {
