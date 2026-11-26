@@ -4,7 +4,7 @@
    21,23,24 red | 25 rail | 26,27,29 yellow | 28 utility | 31,32,34 green | 35 rail | 37,39 dark blue */
 const THEMES = {
   classic: {
-    name: 'Classic', emoji: '🎩', blurb: 'The traditional board with Atlantic City streets.',
+    name: 'Hometown', emoji: '🏡', blurb: 'A friendly small town, from Maple Lane to Skyline Drive.',
     rr: '🚂', util: '💡', accent: '#ffc233', accent2: '#ff8a1f', c1: '#2c4a9a', c2: '#14214a', c3: '#0d1530',
     names: {},
   },

@@ -1,0 +1,76 @@
+GAME NIGHT - HOW TO PLAY AND HOW TO UPDATE
+===========================================
+
+WHAT'S READY
+  - Game menu with shared rooms (up to 8 people).
+  - Snakes & Ladders (2-8 players).
+  - Property Tycoon (2-4 players). For now it opens on its own page with its
+    own room code. It moves into the shared room in a later stage.
+  - The other games show "Coming soon".
+
+START A GAME NIGHT (host)
+  1. Open your game address. Type your name and pick a picture.
+  2. Tap Snakes & Ladders. A 5-letter room code appears.
+  3. Send friends the code, or tap "Copy invite link".
+  4. Add computer players or "Another player on this device" if you like.
+  5. Tap Start. KEEP THIS PAGE OPEN: your device runs the game.
+
+JOIN (friends)
+  Open the invite link (or the address + type the code), type a name, tap Join.
+
+DURING THE NIGHT
+  - Spin: tap SPIN! (keyboard: Space or R).
+  - Emoji buttons send a reaction everyone can see.
+  - Sound button at the top turns sound off or on (each device has its own).
+  - After a game: "Play again" or "Choose a game". Everyone stays in the room
+    and the scoreboard keeps counting wins.
+  - More people than the game seats? Extra people watch. Use the up arrow in
+    the player list to choose who plays.
+
+LEAVING AND COMING BACK
+  - Left by accident, or your screen went to sleep? Open the address and tap
+    "Rejoin". You get your player back.
+  - After about 20 seconds away, the computer plays for you until you return.
+  - Different device? Type the code, then tap "That's me" next to your name.
+    (This works once the computer is covering you or you show as Away.)
+  - Anyone with the room code can join, so only share it with your group.
+
+PAUSE AND FINISH LATER (host)
+  Tap "Pause & save". Later, on the SAME device and browser, open the address
+  and tap "Resume hosting". Friends tap "Rejoin". The scoreboard is saved too.
+
+HOW TO UPDATE THE WEBSITE ON GITHUB
+  1. On your computer open: Desktop > Claude > game-night
+  2. Click inside the folder and press Ctrl+A to select every file.
+  3. In your browser open:  https://github.com/Aneet87/monopoly/upload/main
+  4. Drag the selected files onto that page. Wait until they are all listed.
+  5. Click the green "Commit changes" button.
+  6. Delete the 4 old files that are no longer used: game.js, ui.js,
+     style.css and HOW-TO-PLAY-ONLINE.txt
+     (Click the file name, then the "..." menu at the top right, then
+     "Delete file", then "Commit changes".)
+     Do NOT delete property-game.js, property-ui.js or property.css.
+  7. Wait 2 minutes. Everyone refreshes the page (computer: Ctrl+Shift+R,
+     phone: close the tab and open it again).
+
+OPTIONAL: RENAME THE WEB ADDRESS
+  Your address has "monopoly" in it. To change it: on the repository page click
+  Settings, change "Repository name" to game-night, click Rename. Your new
+  address becomes https://aneet87.github.io/game-night/ and the old link stops
+  working, so send friends the new one. Then upload to
+  https://github.com/Aneet87/game-night/upload/main next time.
+
+IF IT WON'T CREATE OR JOIN A ROOM
+  - "Could not create a room" or "Could not reach the connection service" while
+    your internet works: the free service that introduces players may be busy
+    or temporarily refusing your network. Wait (it can be 30 minutes or more)
+    or try another network.
+  - "Could not make a link to the host": try a different network for one
+    person (for example home Wi-Fi for one, phone data for the other). Turn
+    off any VPN. Keep the host's page open on screen.
+  - "Test my connection" on the first screen describes what your network allows.
+
+YOUR FILES
+  - The "monopoly" folder (your first single-screen game) is unchanged.
+  - The "monopoly-online" folder is unchanged too, as a backup.
+  - "game-night" is the new website.
