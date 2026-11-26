@@ -110,10 +110,10 @@ const PRESETS = {
   'High stakes': { ...BASE, startCash: 3000, freeParking: true, fpStart: 1000, goSalary: 300, jailFine: 200, rentPct: 150 },
 };
 
-// ------------------------------------------------------------ online room plumbing (PeerJS = free peer-to-peer connections)
+// ------------------------------------------------------------ online room plumbing (through link.js)
 // The HOST's browser runs the real game (the rules engine). Friends send "I want to do X" messages to the host,
 // and the host sends everyone the new game state. Nobody needs to install anything.
-const PEER_PREFIX = 'gntycoon-';
+const ROOM_PREFIX = 'T';
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const newCode = () => Array.from({ length: 5 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
 const newCid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -122,14 +122,13 @@ const AWAY_GRACE_MS = 20000;   // how long a dropped player has to come back bef
 let net = null;   // null = not in a room
 const mine = pi => !net || net.mine.has(pi);
 
-const sendTo = (conn, o) => { try { if (conn && conn.open) conn.send(JSON.stringify(o)); } catch (e) { /* connection closing */ } };
-const parse = d => { try { return typeof d === 'string' ? JSON.parse(d) : null; } catch (e) { return null; } };
+const sendTo = (conn, o) => { if (conn) conn.send(o); };
 // What friends get to see: everything except the secret card order.
 const pubG = () => Object.assign({}, g, { log: g.log.slice(-60), decks: { chance: [], chest: [] } });
 function broadcast() {
   if (!net || net.role !== 'host' || !g) return;
-  const m = JSON.stringify({ t: 'state', g: pubG() });
-  Object.values(net.conns).forEach(c => { try { if (c.open) c.send(m); } catch (e) { /* ignore */ } });
+  const m = { t: 'state', g: pubG() };
+  Object.values(net.conns).forEach(c => sendTo(c, m));
 }
 
 function prefs() { return Object.assign({ name: '', icon: TOKENS[0] }, lsGet(PREF_KEY)); }
@@ -183,7 +182,7 @@ function homeHTML() {
       <div class="prow"><input type="text" id="jcode" value="${esc(joinCode)}" maxlength="8" placeholder="Room code" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase"><button data-a="joinRoom">Join</button></div></div>
     <div class="card"><h3>Host a game</h3><p class="hint" style="margin-top:0">You choose the rules and send friends your room code. Keep this page open while you play, because your browser runs the game.</p>
       <button class="bigstart" data-a="hostRoom">Create a room</button></div>
-    <div class="card"><h3>Trouble connecting?</h3><p class="hint" style="margin-top:0">${hasRelay() ? "A relay server is set up for this game." : "No relay server is set up yet."} Run this on each device that has trouble.</p>
+    <div class="card"><h3>Trouble connecting?</h3><p class="hint" style="margin-top:0">Run this on each device that has trouble.</p>
       <div class="prow"><button class="sec" data-a="testConn">Test my connection</button></div>${ui.test ? `<div class="notice">${esc(ui.test)}</div>` : ""}</div>`;
 }
 
@@ -283,107 +282,35 @@ function renderSetup(skipRead) {
   $('#setup').hidden = false; $('#game').hidden = true;
 }
 
-// ------------------------------------------------------------ connection settings
-// The relay servers bundled with PeerJS no longer exist, so we supply our own list.
-const STUN_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }];
-const relayList = () => (typeof RELAY_SERVERS !== 'undefined' && Array.isArray(RELAY_SERVERS) ? RELAY_SERVERS : []);
-const hasRelay = () => relayList().some(s => [].concat(s.urls || []).some(u => /^turns?:/.test(u)));
-const CONNECT_TIMEOUT_MS = 25000;
-
-function peerOptions() {
-  const config = { iceServers: STUN_SERVERS.concat(relayList()), sdpSemantics: 'unified-plan' };
-  // add ?relayonly=1 to the address to test that the relay really carries the game
-  if (new URLSearchParams(location.search).get('relayonly') === '1') config.iceTransportPolicy = 'relay';
-  return { debug: 0, config };
-}
-
-// Asks the browser which kinds of connection routes it can get on this network.
-async function probeRoutes() {
-  const pc = new RTCPeerConnection({ iceServers: peerOptions().config.iceServers });
-  const found = new Set();
-  const done = new Promise(resolve => {
-    setTimeout(resolve, 10000);
-    pc.onicecandidate = e => { if (!e.candidate) resolve(); else found.add(e.candidate.type); };
-  });
-  pc.createDataChannel('probe');
-  await pc.setLocalDescription(await pc.createOffer());
-  await done;
-  pc.close();
-  return { direct: found.has('srflx'), relay: found.has('relay') };
-}
-
+// ------------------------------------------------------------ connection
 async function testConnection() {
-  ui.test = 'Testing… this takes up to 10 seconds.'; renderSetup();
-  let msg;
-  try {
-    const r = await probeRoutes();
-    if (r.relay) msg = '✅ Relay is working. This device should be able to play with friends on other networks.';
-    else if (hasRelay()) msg = '❌ A relay is set up but did not answer. Check the details in relay-settings.js (a new login can take 2 minutes to start working), or this network is blocking it.';
-    else if (r.direct) msg = '⚠️ No relay is set up. This device can only connect when both networks allow a direct link, so some friends will fail to join. See "SET UP THE RELAY" in the how-to file.';
-    else msg = '❌ No relay is set up, and this network blocks direct connections. Turn off any VPN or try another network.';
-  } catch (e) { msg = '❌ This browser could not run the test. Try the latest Chrome, Edge or Safari.'; }
-  ui.test = msg;
+  ui.test = 'Testing… this takes a few seconds.'; renderSetup();
+  ui.test = await Link.test();
   if (!net && ui.screen === 'home') renderSetup();
 }
 
-function connectFailMessage() {
-  return 'Found no working link to the host. Check the code and that the host\'s game page is open on screen. ' +
-    (hasRelay() ? 'Turn off any VPN, or try another network. Then run "Test my connection" below on both devices.'
-      : 'This usually means your two networks can\'t connect directly and the game has no relay server set up yet (the host can add one: see "SET UP THE RELAY").');
-}
-
-// If the link to the matchmaking service drops, retry with longer and longer waits. Retrying instantly can
-// flood the free service and get this network temporarily blocked.
-const RECONNECT_WAITS = [3000, 8000, 20000, 45000, 90000];
-function gentleReconnect(peer, wanted) {
-  let tries = 0, timer = null;
-  peer.on('open', () => { tries = 0; });
-  peer.on('disconnected', () => {
-    if (timer || !wanted()) return;
-    timer = setTimeout(() => {
-      timer = null;
-      if (!peer.destroyed && peer.disconnected && wanted()) { try { peer.reconnect(); } catch (e) { /* closed */ } }
-    }, RECONNECT_WAITS[Math.min(tries++, RECONNECT_WAITS.length - 1)]);
-  });
-}
-
 // --- host side
-function makeHostPeer(code, retries, ok, fail) {
-  let peer, opened = false;
-  try { peer = new Peer(PEER_PREFIX + code, peerOptions()); } catch (e) { fail('error'); return; }
-  peer.on('open', () => { if (opened) return; opened = true; ok(peer); });   // fires again after a reconnect
-  peer.on('error', err => {
-    if (opened) { console.warn('peer error', err); return; }
-    try { peer.destroy(); } catch (e) { /* ignore */ }
-    if (err.type === 'unavailable-id') {
-      if (retries > 0) setTimeout(() => makeHostPeer(code, retries - 1, ok, fail), 1500); else fail('taken');
-    } else fail('error');
-  });
-}
-
-function wireHostPeer(peer) {
-  peer.on('connection', conn => {
-    conn.on('data', d => hostData(conn, parse(d)));
-    conn.on('close', () => { if (net && net.role === 'host' && conn._cid && net.conns[conn._cid] === conn) hostDropped(conn._cid); });
-  });
-  gentleReconnect(peer, () => true);
+function openHostLink(code, ok, fail) {
+  Link.host(ROOM_PREFIX + code, {
+    data: (conn, m) => hostData(conn, m),
+    closed: conn => { if (net && net.role === 'host' && conn._cid && net.conns[conn._cid] === conn) hostDropped(conn._cid); },
+  }).then(link => ok({ destroy: link.close }), fail);
 }
 
 function hostRoom() {
-  if (typeof Peer === 'undefined') { ui.msg = 'The online helper did not load. Check your internet connection and reload this page.'; renderSetup(); return; }
+  if (!Link.available()) { ui.msg = 'The online helper did not load. Check your internet connection and reload this page.'; renderSetup(); return; }
   const me = readMe();
   ui.msg = 'Creating your room…'; renderSetup();
   const attempt = n => {
     const code = newCode();
-    makeHostPeer(code, 0, peer => {
+    openHostLink(code, peer => {
       net = { role: 'host', code, peer, conns: {}, seats: [{ kind: 'host', name: me.name, icon: me.icon, cid: null }], started: false, queue: [], timers: {}, owner: [], mine: new Set() };
       ui.setup = { opts: Object.assign({}, G.DEFAULTS) };
       ui.screen = 'hostlobby'; ui.msg = '';
-      wireHostPeer(peer);
       renderSetup();
     }, why => {
       if (why === 'taken' && n < 4) attempt(n + 1);
-      else { ui.msg = 'Could not reach the matchmaking service to create a room. Check your internet connection and try again.'; renderSetup(); }
+      else { ui.msg = why === 'taken' ? 'Could not create a room. Please try again.' : Link.explain(why); renderSetup(); }
     });
   };
   attempt(0);
@@ -392,13 +319,12 @@ function hostRoom() {
 function resumeHost() {
   const sv = lsGet(HOST_KEY);
   if (!sv || !sv.g) return;
-  if (typeof Peer === 'undefined') { ui.msg = 'The online helper did not load. Check your internet connection and reload.'; renderSetup(); return; }
+  if (!Link.available()) { ui.msg = 'The online helper did not load. Check your internet connection and reload.'; renderSetup(); return; }
   ui.msg = 'Reopening your room…'; renderSetup();
-  makeHostPeer(sv.code, 8, peer => {
+  openHostLink(sv.code, peer => {
     g = sv.g; g.options = Object.assign({}, G.DEFAULTS, g.options);
     net = { role: 'host', code: sv.code, peer, conns: {}, seats: [], started: true, queue: [], timers: {}, owner: sv.owner, mine: new Set() };
     sv.owner.forEach((o, i) => { if (o && (o.kind === 'host' || o.kind === 'local')) net.mine.add(i); });
-    wireHostPeer(peer);
     // Friends haven't reconnected yet: hold the game until they are back (or the host chooses to start anyway).
     sv.owner.forEach((o, i) => { if (o && o.kind === 'remote' && !g.players[i].bankrupt && !g.players[i].bot) g.players[i].away = true; });
     g.hold = waitingFor().length > 0;
@@ -407,7 +333,7 @@ function resumeHost() {
     ui.msg = ''; ui.seenCard = g.lastCard ? g.lastCard.seq : 0;
     enterGame();
     broadcast();
-  }, () => { ui.msg = 'Could not reopen the room. Wait a few seconds and try again.'; renderSetup(); });
+  }, why => { ui.msg = why === 'taken' ? 'Could not reopen that room. Discard it and start a new one.' : Link.explain(why); renderSetup(); });
 }
 
 function sendLobbyAll() {
@@ -588,7 +514,7 @@ function removeSeat(i) {
 
 // --- guest side
 function joinRoom(saved) {
-  if (typeof Peer === 'undefined') { ui.msg = 'The online helper did not load. Check your internet connection and reload this page.'; renderSetup(); return; }
+  if (!Link.available()) { ui.msg = 'The online helper did not load. Check your internet connection and reload this page.'; renderSetup(); return; }
   const me = readMe();
   const code = (saved ? saved.code : ($('#jcode') ? $('#jcode').value : '')).toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (code.length < 4) { toast('Type the room code your host gave you'); return; }
@@ -610,45 +536,18 @@ function guestFail(msg, forget) {
 function guestOpen() {
   const n = net;
   if (!n || n.left || n.role !== 'guest') return;
-  const start = () => {
-    if (net !== n || n.left) return;
-    let opened = false, timer = null;
-    const conn = n.peer.connect(PEER_PREFIX + n.code, { reliable: true });
-    n.conn = conn;
-    const failed = () => {   // this attempt never opened
-      clearTimeout(timer);
-      if (opened || net !== n || n.left || n.conn !== conn) return;
-      n.conn = null;
-      try { conn.close(); } catch (e) { /* ignore */ }
-      if (n.joined) { guestLost(n); return; }
-      if (!n.triedAgain) {   // first try: start over once with a completely fresh connection
-        n.triedAgain = true;
-        const old = n.peer; n.peer = null;
-        try { old.destroy(); } catch (e) { /* ignore */ }
-        ui.msg = `Still connecting to room ${n.code}… (second try)`; renderSetup();
-        guestOpen();
-      } else guestFail(connectFailMessage());
-    };
-    conn.on('open', () => { opened = true; clearTimeout(timer); n.status = 'online'; n.retries = 0; sendTo(conn, { t: 'join', cid: n.cid, name: n.name, icon: n.icon }); });
-    conn.on('data', d => guestData(n, parse(d)));
-    conn.on('close', () => { if (n.conn !== conn) return; if (opened) guestLost(n); else failed(); });
-    conn.on('error', () => { if (!opened) failed(); });
-    timer = setTimeout(failed, CONNECT_TIMEOUT_MS);
-  };
-  if (!n.peer || n.peer.destroyed) {
-    const peer = new Peer(peerOptions());
-    n.peer = peer;
-    peer.once('open', start);
-    peer.on('error', err => {
-      if (net !== n || n.left || n.peer !== peer) return;
-      if (err.type === 'peer-unavailable') {
-        if (!n.joined) guestFail(`Room "${n.code}" was not found. Check the code and make sure the host has their page open.`);
-        else guestLost(n);
-      } else if (n.joined) guestLost(n);
-      else if (err.type !== 'webrtc') guestFail('Could not reach the matchmaking service. Check your internet connection and try again.');
-    });
-    gentleReconnect(peer, () => n.peer === peer && !n.left);
-  } else start();
+  if (n.peer) n.peer.destroy();
+  const link = Link.join(ROOM_PREFIX + n.code, {
+    open: conn => { if (net !== n || n.left) return; n.conn = conn; n.status = 'online'; n.retries = 0; sendTo(conn, { t: 'join', cid: n.cid, name: n.name, icon: n.icon }); },
+    data: m => guestData(n, m),
+    lost: () => { n.conn = null; guestLost(n); },
+    fail: why => {
+      if (net !== n || n.left) return;
+      if (n.joined) guestLost(n);
+      else guestFail(why === 'notfound' ? `Room "${n.code}" was not found. Check the code and make sure the host has their page open.` : Link.explain(why));
+    },
+  });
+  n.peer = { destroy: link.close };
 }
 
 function guestLost(n) {

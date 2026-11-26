@@ -45,8 +45,8 @@ HOW TO UPDATE THE WEBSITE ON GITHUB
   3. In your browser open:  https://github.com/Aneet87/monopoly/upload/main
   4. Drag the selected files onto that page. Wait until they are all listed.
   5. Click the green "Commit changes" button.
-  6. Delete the 4 old files that are no longer used: game.js, ui.js,
-     style.css and HOW-TO-PLAY-ONLINE.txt
+  6. Delete old files that are no longer used, if you see them: game.js, ui.js,
+     style.css, HOW-TO-PLAY-ONLINE.txt, peerjs.min.js and relay-settings.js
      (Click the file name, then the "..." menu at the top right, then
      "Delete file", then "Commit changes".)
      Do NOT delete property-game.js, property-ui.js or property.css.
@@ -60,15 +60,29 @@ OPTIONAL: RENAME THE WEB ADDRESS
   working, so send friends the new one. Then upload to
   https://github.com/Aneet87/game-night/upload/main next time.
 
+THE CONNECTION SERVICE (GOOGLE FIREBASE)
+  Moves travel through your free Firebase project "game-night". It works like an
+  online whiteboard: one device writes a note, another reads it and wipes it off.
+  Keep the project on the free "Spark" plan. Never add a payment card.
+
+  One time only - publish the access rules (the lock):
+    1. On your computer, right-click firebase-rules.json in the game-night
+       folder, choose "Open with" > Notepad. Press Ctrl+A, then Ctrl+C.
+    2. Go to console.firebase.google.com and open game-night.
+    3. Open Realtime Database, then the "Rules" tab.
+    4. Click inside the rules box, press Ctrl+A, then Ctrl+V.
+    5. Click "Publish".
+  Also needed (one time): Security > Authentication > Sign-in method >
+  Anonymous > Enable > Save.
+
 IF IT WON'T CREATE OR JOIN A ROOM
-  - "Could not create a room" or "Could not reach the connection service" while
-    your internet works: the free service that introduces players may be busy
-    or temporarily refusing your network. Wait (it can be 30 minutes or more)
-    or try another network.
-  - "Could not make a link to the host": try a different network for one
-    person (for example home Wi-Fi for one, phone data for the other). Turn
-    off any VPN. Keep the host's page open on screen.
-  - "Test my connection" on the first screen describes what your network allows.
+  - Tap "Test my connection" on the first screen. It says what is wrong.
+  - "Not fully set up": turn on Anonymous sign-in (above).
+  - "Refused access": publish the rules (above).
+  - "Could not reach the game service": check the internet, turn off any VPN or
+    ad blocker for the game page, or try another network.
+  - "Room was not found": check the code, and make sure the host has the game
+    open on screen. A phone that goes to sleep pauses the host.
 
 YOUR FILES
   - The "monopoly" folder (your first single-screen game) is unchanged.

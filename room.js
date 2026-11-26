@@ -105,12 +105,12 @@ function publish() {
   receive(JSON.parse(JSON.stringify(snapshot(hostMine()))));
 }
 
-function openRoom(code, room, retries) {
+function openRoom(code, room) {
   const mine = { code, room, chans: {}, timers: {}, botTimer: null, link: null };
   return Link.host(code, {
     data: (ch, m) => { if (H === mine) hostData(ch, m); },
     closed: ch => { if (H === mine && ch.cid && H.chans[ch.cid] === ch) hostDropped(ch.cid); },
-  }, retries).then(link => { mine.link = link; H = mine; return mine; });
+  }).then(link => { mine.link = link; H = mine; return mine; });
 }
 
 function createRoom(gameId) {
@@ -126,7 +126,7 @@ function createRoom(gameId) {
       publish();
     }, why => {
       if (why === 'taken' && n < 4) attempt(n + 1);
-      else { ui.creating = false; ui.msg = 'Could not create a room. Check your internet connection. If that is fine, the free connection service may be blocking this network for a while: close other game tabs, wait about 30 minutes, or try another network.'; renderMenu(); }
+      else { ui.creating = false; ui.msg = why === 'taken' ? 'Could not create a room. Please try again.' : Link.explain(why); renderMenu(); }
     });
   };
   attempt(0);
@@ -137,7 +137,7 @@ function resumeRoom() {
   if (!sv || !sv.room || ui.creating) return;
   if (!Link.available()) { ui.msg = 'The online helper did not load. Check your internet connection and reload.'; renderMenu(); return; }
   ui.creating = true; ui.msg = 'Reopening your room…'; renderMenu();
-  openRoom(sv.code, sv.room, 8).then(() => {
+  openRoom(sv.code, sv.room).then(() => {
     ui.creating = false; ui.msg = '';
     H.room.roster.forEach(m => { if (m.kind === 'remote') { m.away = true; m.covering = false; } });
     const mt = H.room.match;
@@ -147,7 +147,7 @@ function resumeRoom() {
     }
     H.room.roster.forEach(m => { if (m.kind === 'remote' && matchSeatOf(m.id) < 0) startLobbyTimer(m); });
     publish();
-  }, () => { ui.creating = false; ui.msg = 'Could not reopen the room. Wait a few seconds and try again.'; renderMenu(); });
+  }, why => { ui.creating = false; ui.msg = why === 'taken' ? 'Could not reopen that room code. Discard the saved night and start a new one.' : Link.explain(why); renderMenu(); });
 }
 
 function startLobbyTimer(m) {
@@ -344,13 +344,11 @@ function guestConnect(n) {
   n.link = Link.join(n.code, {
     open: ch => { if (J !== n) return; n.ch = ch; n.status = 'online'; n.retries = 0; ch.send({ t: 'join', cid: n.cid, name: n.name, icon: n.icon }); },
     data: m => guestData(n, m),
-    retry: () => { if (J === n && !n.joined) { ui.msg = `Still connecting to room ${n.code}… (second try)`; renderMenu(); } },
     lost: () => guestLost(n),
     fail: reason => {
       if (J !== n) return;
       if (n.joined) { guestLost(n); return; }
-      goHome(reason === 'notfound' ? `Room "${n.code}" was not found. Check the code and make sure the host has the game open.`
-        : reason === 'service' ? 'Could not reach the connection service. Check your internet connection and try again.' : Link.failMessage());
+      goHome(reason === 'notfound' ? `Room "${n.code}" was not found. Check the code and make sure the host has the game open.` : Link.explain(reason));
     },
   });
 }

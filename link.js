@@ -1,126 +1,194 @@
-/* The CONNECTION layer, kept on its own so it can be swapped (for example to Firebase) without touching any game.
-   Today it uses PeerJS: a free service introduces the computers, then they talk to each other.
-   The rest of the site only uses: Link.host(), Link.join() and Link.test(). Messages are plain objects. */
+/* The CONNECTION layer. It passes messages between the host and friends through Google Firebase
+   (Realtime Database). Think of it as an online whiteboard: one side writes a note, the other reads it
+   and wipes it off. The rest of the site only uses Link.host(), Link.join(), Link.test() and Link.explain().
+
+   Layout of one room:   rooms/CODE/meta      who the host is
+                         rooms/CODE/online    true while the host has the game open
+                         rooms/CODE/guests    which friends are connected right now
+                         rooms/CODE/up        notes from friends to the host
+                         rooms/CODE/down      notes from the host to each friend
+   firebase-rules.json makes sure each friend can only read their own notes. */
 const Link = (() => {
   'use strict';
-  const PREFIX = 'gamenight-';
-  const CONNECT_TIMEOUT_MS = 25000;
-  const STUN_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }];
-  const relayList = () => (typeof RELAY_SERVERS !== 'undefined' && Array.isArray(RELAY_SERVERS) ? RELAY_SERVERS : []);
-  const hasRelay = () => relayList().some(s => [].concat(s.urls || []).some(u => /^turns?:/.test(u)));
+  const WAIT_MS = 20000;
+  const STALE_MS = 12 * 60 * 60 * 1000;   // an unused room code is free again after 12 hours
 
-  function peerOptions() {
-    const config = { iceServers: STUN_SERVERS.concat(relayList()), sdpSemantics: 'unified-plan' };
-    if (new URLSearchParams(location.search).get('relayonly') === '1') config.iceTransportPolicy = 'relay';
-    return { debug: 0, config };
-  }
-  const available = () => typeof Peer !== 'undefined';
+  const available = () => typeof firebase !== 'undefined' && typeof firebase.database === 'function' &&
+    typeof firebase.auth === 'function' && typeof FIREBASE_CONFIG !== 'undefined';
   const parse = d => { try { return typeof d === 'string' ? JSON.parse(d) : null; } catch (e) { return null; } };
-  const quietly = fn => { try { fn(); } catch (e) { /* already closed */ } };
-
-  // If the link to the matchmaking service drops, retry with longer and longer waits. Retrying instantly can
-  // flood the free service and get this network temporarily blocked.
-  const RECONNECT_WAITS = [3000, 8000, 20000, 45000, 90000];
-  function gentleReconnect(peer, wanted) {
-    let tries = 0, timer = null;
-    peer.on('open', () => { tries = 0; });
-    peer.on('disconnected', () => {
-      if (timer || !wanted()) return;
-      timer = setTimeout(() => {
-        timer = null;
-        if (!peer.destroyed && peer.disconnected && wanted()) { try { peer.reconnect(); } catch (e) { /* closed */ } }
-      }, RECONNECT_WAITS[Math.min(tries++, RECONNECT_WAITS.length - 1)]);
-    });
-  }
-
-  // One friend's connection, as the rest of the site sees it.
-  const channel = conn => ({
-    send(o) { quietly(() => { if (conn.open) conn.send(JSON.stringify(o)); }); },
-    close() { quietly(() => conn.close()); },
+  const quietly = p => { if (p && p.catch) p.catch(() => {}); };
+  const timed = (p, ms = WAIT_MS) => new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('timeout')), ms);
+    p.then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
   });
 
+  // What went wrong, in one word: 'setup' (anonymous sign-in off), 'rules' (access rules missing) or 'service'.
+  function problem(err) {
+    const text = `${(err && err.code) || ''} ${(err && err.message) || ''}`;
+    if (/operation-not-allowed|admin-restricted|configuration-not-found/i.test(text)) return 'setup';
+    if (/permission.denied/i.test(text)) return 'rules';
+    return 'service';
+  }
+  function explain(why) {
+    if (why === 'setup') return 'The game service is not fully set up: turn on "Anonymous" sign-in in Firebase (see HOW-TO-PLAY.txt).';
+    if (why === 'rules') return 'The game service refused access. Publish the access rules in Firebase (see HOW-TO-PLAY.txt).';
+    return 'Could not reach the game service. Check your internet connection, turn off any VPN or ad blocker for this page, or try another network.';
+  }
+
+  let signingIn = null;
+  // Each device gets a temporary, nameless ID. Nobody types an email or password.
+  function ready() {
+    if (!signingIn) {
+      signingIn = timed(Promise.resolve().then(() => {
+        if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+        return firebase.auth().signInAnonymously();
+      })).then(cred => ({ uid: cred.user.uid, db: firebase.database() }));
+      signingIn.catch(() => { signingIn = null; });
+    }
+    return signingIn;
+  }
+
   /* Open a room. handlers: { data(channel, msg), closed(channel) }
-     Resolves to { close() }; rejects with 'taken' or 'error'. */
-  function host(code, handlers, retries = 0) {
+     Resolves to { close() }; rejects with 'taken', 'setup', 'rules' or 'service'. */
+  async function host(code, handlers) {
+    try {
+      const { uid, db } = await ready();
+      const room = db.ref('rooms/' + code);
+      const meta = (await timed(room.child('meta').once('value'))).val();
+      if (meta && meta.host !== uid && meta.seen > Date.now() - STALE_MS) throw new Error('taken');
+      const claim = () => room.child('meta').set({ host: uid, seen: firebase.database.ServerValue.TIMESTAMP });
+      await timed(claim());
+      await timed(Promise.all(['guests', 'up', 'down'].map(k => room.child(k).remove())));   // clear leftovers
+      return await open(db, room, claim, handlers);
+    } catch (err) {
+      throw err && err.message === 'taken' ? 'taken' : problem(err);
+    }
+  }
+
+  function open(db, room, claim, handlers) {
     return new Promise((resolve, reject) => {
-      let peer, opened = false;
-      try { peer = new Peer(PREFIX + code, peerOptions()); } catch (e) { reject('error'); return; }
-      peer.on('open', () => { opened = true; resolve({ close: () => quietly(() => peer.destroy()) }); });
-      peer.on('error', err => {
-        if (opened) { console.warn('connection notice', err); return; }
-        quietly(() => peer.destroy());
-        if (err.type === 'unavailable-id' && retries > 0) setTimeout(() => host(code, handlers, retries - 1).then(resolve, reject), 1500);
-        else reject(err.type === 'unavailable-id' ? 'taken' : 'error');
-      });
-      peer.on('connection', conn => {
-        const ch = channel(conn);
-        conn.on('data', d => { const m = parse(d); if (m) handlers.data(ch, m); });
-        conn.on('close', () => handlers.closed(ch));
-      });
-      gentleReconnect(peer, () => true);
+      const online = room.child('online'), guests = room.child('guests'), connected = db.ref('.info/connected');
+      const links = new Map();   // "uid/sid" -> one friend's connection
+      let closed = false, isConnected = false, started = false, timer = null, heartbeat = null;
+
+      function drop(key) {
+        const link = links.get(key);
+        if (!link) return;
+        links.delete(key);
+        link.inbox.off();
+        quietly(room.child('up/' + key).remove());
+        quietly(room.child('down/' + key).remove());
+        handlers.closed(link.channel);
+      }
+      function add(key) {
+        const inbox = room.child('up/' + key);
+        const channel = {
+          send(o) { if (links.has(key)) quietly(room.child('down/' + key).push(JSON.stringify(o))); },
+          close() { if (links.has(key)) { quietly(guests.child(key).remove()); drop(key); } },
+        };
+        links.set(key, { channel, inbox });
+        inbox.on('child_added', snap => {
+          const m = parse(snap.val());
+          quietly(snap.ref.remove());
+          if (m && links.has(key)) handlers.data(channel, m);
+        });
+      }
+      function watchGuests() {
+        guests.on('value', snap => {
+          const now = new Set();
+          Object.entries(snap.val() || {}).forEach(([u, sessions]) => Object.keys(sessions).forEach(s => now.add(`${u}/${s}`)));
+          [...links.keys()].filter(k => !now.has(k)).forEach(drop);
+          now.forEach(k => { if (!links.has(k)) add(k); });
+        }, err => console.warn('room notice', err));
+      }
+      // Say "the host is here", and have the server erase that the moment this device disconnects.
+      const announce = () => online.onDisconnect().remove().then(() => online.set(true));
+
+      function close() {
+        if (closed) return;
+        closed = true;
+        clearTimeout(timer); clearInterval(heartbeat);
+        connected.off('value', onConnected); online.off(); guests.off();
+        links.forEach(l => l.inbox.off()); links.clear();
+        quietly(online.onDisconnect().cancel());
+        ['online', 'guests', 'up', 'down'].forEach(k => quietly(room.child(k).remove()));
+      }
+      function onConnected(snap) {
+        isConnected = snap.val() === true;
+        if (!isConnected || closed) return;
+        announce().then(() => {
+          if (started || closed) return;
+          started = true;
+          clearTimeout(timer);
+          resolve({ close });
+          setTimeout(() => {
+            if (closed) return;
+            watchGuests();
+            online.on('value', s => { if (s.val() !== true && isConnected && !closed) quietly(announce()); });
+          }, 0);
+        }, err => { if (!started) { close(); reject(err); } });
+      }
+      timer = setTimeout(() => { close(); reject(new Error('timeout')); }, WAIT_MS);
+      heartbeat = setInterval(() => quietly(claim()), 30 * 60 * 1000);
+      connected.on('value', onConnected);
     });
   }
 
-  /* Join a room. handlers: { open(channel), data(msg), lost(), fail(reason), retry() }
-     reason: 'notfound' | 'service' | 'noroute'. Returns { close() }. */
+  /* Join a room. handlers: { open(channel), data(msg), lost(), fail(reason) }
+     reason: 'notfound' | 'setup' | 'rules' | 'service'. Returns { close() }. */
   function join(code, handlers) {
-    let peer = null, done = false, opened = false, timer = null, attempt = 0;
-    const stop = () => { done = true; clearTimeout(timer); const p = peer; peer = null; setTimeout(() => quietly(() => p && p.destroy()), 400); };
+    let done = false, opened = false, cleanup = () => {};
+    const stop = () => { if (done) return; done = true; cleanup(); };
     const end = fn => { if (done) return; stop(); fn(); };
-    function start() {
-      let mine;
-      try { mine = peer = new Peer(peerOptions()); } catch (e) { end(() => handlers.fail('service')); return; }
-      const noRoute = () => {
-        if (done || opened || peer !== mine) return;
-        clearTimeout(timer);
-        if (attempt++ === 0) { peer = null; quietly(() => mine.destroy()); handlers.retry(); start(); } else end(() => handlers.fail('noroute'));
+    (async () => {
+      const { uid, db } = await ready();
+      if (done) return;
+      const room = db.ref('rooms/' + code), online = room.child('online'), connected = db.ref('.info/connected');
+      const here = (await timed(online.once('value'))).val() === true;
+      if (done) return;
+      if (!here) { end(() => handlers.fail('notfound')); return; }
+      const sid = room.child('guests/' + uid).push().key;
+      const mine = ['guests', 'up', 'down'].map(k => room.child(`${k}/${uid}/${sid}`));
+      const [presence, outbox, inbox] = mine;
+      let onOnline, onPresence, onConnected;
+      cleanup = () => {
+        inbox.off();
+        if (onOnline) online.off('value', onOnline);
+        if (onPresence) presence.off('value', onPresence);
+        if (onConnected) connected.off('value', onConnected);
+        // a short pause lets a last message (such as "I'm leaving") arrive first
+        setTimeout(() => mine.forEach(r => { quietly(r.onDisconnect().cancel()); quietly(r.remove()); }), 400);
       };
-      mine.once('open', () => {   // once: reconnecting to the service must not open a second link to the host
-        if (done || peer !== mine) return;
-        const conn = mine.connect(PREFIX + code, { reliable: true });
-        const ch = channel(conn);
-        conn.on('open', () => { if (done || peer !== mine) return; opened = true; clearTimeout(timer); handlers.open(ch); });
-        conn.on('data', d => { const m = parse(d); if (m && !done) handlers.data(m); });
-        conn.on('close', () => { if (peer !== mine) return; if (opened) end(handlers.lost); else noRoute(); });
-        conn.on('error', () => { if (!opened) noRoute(); });
+      await timed(Promise.all(mine.map(r => r.onDisconnect().remove())));
+      await timed(presence.set(true));
+      if (done) { cleanup(); return; }
+      opened = true;
+      const channel = {
+        send(o) { if (!done) quietly(outbox.push(JSON.stringify(o))); },
+        close() { stop(); },
+      };
+      inbox.on('child_added', snap => {
+        const m = parse(snap.val());
+        quietly(snap.ref.remove());
+        if (m && !done) handlers.data(m);
       });
-      mine.on('error', err => {
-        if (done || peer !== mine) return;
-        if (err.type === 'peer-unavailable') end(() => handlers.fail('notfound'));
-        else if (opened) { if (err.type !== 'webrtc') end(handlers.lost); }
-        else if (err.type === 'webrtc') noRoute();
-        else end(() => handlers.fail('service'));
-      });
-      gentleReconnect(mine, () => peer === mine && !done);
-      clearTimeout(timer);
-      timer = setTimeout(noRoute, CONNECT_TIMEOUT_MS);
-    }
-    start();
+      const lost = () => end(handlers.lost);
+      onOnline = online.on('value', s => { if (s.val() !== true) lost(); });
+      onPresence = presence.on('value', s => { if (s.val() !== true) lost(); });
+      onConnected = connected.on('value', s => { if (s.val() === false) lost(); });
+      if (!done) handlers.open(channel);
+    })().catch(err => { console.warn('join failed', err); end(() => (opened ? handlers.lost() : handlers.fail(problem(err)))); });
     return { close: stop };
   }
 
-  const failMessage = () => 'Could not make a link to the host. Check the code and that the host has the game open on screen. ' +
-    'Then try another network (for example, one person on home Wi-Fi and the other on phone data) and turn off any VPN.';
-
-  // Plain-language check of what kind of connection this device and network can make.
+  // Plain-language check that this device can use the game service.
   async function test() {
     try {
-      const pc = new RTCPeerConnection({ iceServers: peerOptions().config.iceServers });
-      const found = new Set();
-      const finished = new Promise(resolve => {
-        setTimeout(resolve, 10000);
-        pc.onicecandidate = e => { if (!e.candidate) resolve(); else found.add(e.candidate.type); };
-      });
-      pc.createDataChannel('probe');
-      await pc.setLocalDescription(await pc.createOffer());
-      await finished;
-      pc.close();
-      if (found.has('relay')) return '✅ Relay is working. This device should be able to play with friends on other networks.';
-      if (hasRelay()) return '❌ A relay is set up but did not answer. Check relay-settings.js, or this network is blocking it.';
-      if (found.has('srflx')) return '⚠️ This device can try a direct link. It works for many pairs of networks, but not all. If joining fails, try a different network.';
-      return '❌ This network blocks direct links. Turn off any VPN or try another network.';
-    } catch (e) { return '❌ This browser could not run the test. Try the latest Chrome, Edge or Safari.'; }
+      const { db } = await ready();
+      await timed(db.ref('rooms/CHECK/online').once('value'), 12000);
+      return '✅ This device can reach the game service. You are ready to play.';
+    } catch (err) { return '❌ ' + explain(problem(err)); }
   }
 
-  return { host, join, test, failMessage, available };
+  return { host, join, test, explain, available };
 })();
