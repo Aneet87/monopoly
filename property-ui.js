@@ -332,11 +332,26 @@ function connectFailMessage() {
       : 'This usually means your two networks can\'t connect directly and the game has no relay server set up yet (the host can add one: see "SET UP THE RELAY").');
 }
 
+// If the link to the matchmaking service drops, retry with longer and longer waits. Retrying instantly can
+// flood the free service and get this network temporarily blocked.
+const RECONNECT_WAITS = [3000, 8000, 20000, 45000, 90000];
+function gentleReconnect(peer, wanted) {
+  let tries = 0, timer = null;
+  peer.on('open', () => { tries = 0; });
+  peer.on('disconnected', () => {
+    if (timer || !wanted()) return;
+    timer = setTimeout(() => {
+      timer = null;
+      if (!peer.destroyed && peer.disconnected && wanted()) { try { peer.reconnect(); } catch (e) { /* closed */ } }
+    }, RECONNECT_WAITS[Math.min(tries++, RECONNECT_WAITS.length - 1)]);
+  });
+}
+
 // --- host side
 function makeHostPeer(code, retries, ok, fail) {
   let peer, opened = false;
   try { peer = new Peer(PEER_PREFIX + code, peerOptions()); } catch (e) { fail('error'); return; }
-  peer.on('open', () => { opened = true; ok(peer); });
+  peer.on('open', () => { if (opened) return; opened = true; ok(peer); });   // fires again after a reconnect
   peer.on('error', err => {
     if (opened) { console.warn('peer error', err); return; }
     try { peer.destroy(); } catch (e) { /* ignore */ }
@@ -351,7 +366,7 @@ function wireHostPeer(peer) {
     conn.on('data', d => hostData(conn, parse(d)));
     conn.on('close', () => { if (net && net.role === 'host' && conn._cid && net.conns[conn._cid] === conn) hostDropped(conn._cid); });
   });
-  peer.on('disconnected', () => { try { peer.reconnect(); } catch (e) { /* ignore */ } });
+  gentleReconnect(peer, () => true);
 }
 
 function hostRoom() {
@@ -623,7 +638,7 @@ function guestOpen() {
   if (!n.peer || n.peer.destroyed) {
     const peer = new Peer(peerOptions());
     n.peer = peer;
-    peer.on('open', start);
+    peer.once('open', start);
     peer.on('error', err => {
       if (net !== n || n.left || n.peer !== peer) return;
       if (err.type === 'peer-unavailable') {
@@ -632,16 +647,16 @@ function guestOpen() {
       } else if (n.joined) guestLost(n);
       else if (err.type !== 'webrtc') guestFail('Could not reach the matchmaking service. Check your internet connection and try again.');
     });
-    peer.on('disconnected', () => { if (n.peer === peer && !n.left) { try { peer.reconnect(); } catch (e) { /* ignore */ } } });
+    gentleReconnect(peer, () => n.peer === peer && !n.left);
   } else start();
 }
 
 function guestLost(n) {
   if (net !== n || n.left || n.retryTimer) return;
   n.status = 'reconnecting'; n.retries++;
-  if (n.retries > 40) { guestFail('Lost connection to the host.', false); return; }
+  if (n.retries > 20) { guestFail('Lost connection to the host.', false); return; }
   if (g) renderSide(); else if (ui.screen === 'guestlobby') renderSetup();
-  n.retryTimer = setTimeout(() => { n.retryTimer = null; guestOpen(); }, 3000);
+  n.retryTimer = setTimeout(() => { n.retryTimer = null; guestOpen(); }, Math.min(3000 * n.retries, 30000));
 }
 
 function guestData(n, m) {

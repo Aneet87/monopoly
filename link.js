@@ -18,6 +18,21 @@ const Link = (() => {
   const parse = d => { try { return typeof d === 'string' ? JSON.parse(d) : null; } catch (e) { return null; } };
   const quietly = fn => { try { fn(); } catch (e) { /* already closed */ } };
 
+  // If the link to the matchmaking service drops, retry with longer and longer waits. Retrying instantly can
+  // flood the free service and get this network temporarily blocked.
+  const RECONNECT_WAITS = [3000, 8000, 20000, 45000, 90000];
+  function gentleReconnect(peer, wanted) {
+    let tries = 0, timer = null;
+    peer.on('open', () => { tries = 0; });
+    peer.on('disconnected', () => {
+      if (timer || !wanted()) return;
+      timer = setTimeout(() => {
+        timer = null;
+        if (!peer.destroyed && peer.disconnected && wanted()) { try { peer.reconnect(); } catch (e) { /* closed */ } }
+      }, RECONNECT_WAITS[Math.min(tries++, RECONNECT_WAITS.length - 1)]);
+    });
+  }
+
   // One friend's connection, as the rest of the site sees it.
   const channel = conn => ({
     send(o) { quietly(() => { if (conn.open) conn.send(JSON.stringify(o)); }); },
@@ -42,7 +57,7 @@ const Link = (() => {
         conn.on('data', d => { const m = parse(d); if (m) handlers.data(ch, m); });
         conn.on('close', () => handlers.closed(ch));
       });
-      peer.on('disconnected', () => quietly(() => peer.reconnect()));
+      gentleReconnect(peer, () => true);
     });
   }
 
@@ -60,7 +75,7 @@ const Link = (() => {
         clearTimeout(timer);
         if (attempt++ === 0) { peer = null; quietly(() => mine.destroy()); handlers.retry(); start(); } else end(() => handlers.fail('noroute'));
       };
-      mine.on('open', () => {
+      mine.once('open', () => {   // once: reconnecting to the service must not open a second link to the host
         if (done || peer !== mine) return;
         const conn = mine.connect(PREFIX + code, { reliable: true });
         const ch = channel(conn);
@@ -76,7 +91,7 @@ const Link = (() => {
         else if (err.type === 'webrtc') noRoute();
         else end(() => handlers.fail('service'));
       });
-      mine.on('disconnected', () => { if (peer === mine && !done) quietly(() => mine.reconnect()); });
+      gentleReconnect(mine, () => peer === mine && !done);
       clearTimeout(timer);
       timer = setTimeout(noRoute, CONNECT_TIMEOUT_MS);
     }

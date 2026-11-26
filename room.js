@@ -126,7 +126,7 @@ function createRoom(gameId) {
       publish();
     }, why => {
       if (why === 'taken' && n < 4) attempt(n + 1);
-      else { ui.creating = false; ui.msg = 'Could not create a room. Check your internet connection. If that is fine, the free connection service may be busy: wait a while before trying again, or try another network.'; renderMenu(); }
+      else { ui.creating = false; ui.msg = 'Could not create a room. Check your internet connection. If that is fine, the free connection service may be blocking this network for a while: close other game tabs, wait about 30 minutes, or try another network.'; renderMenu(); }
     });
   };
   attempt(0);
@@ -358,9 +358,9 @@ function guestConnect(n) {
 function guestLost(n) {
   if (J !== n || n.retryTimer) return;
   n.ch = null; n.status = 'reconnecting';
-  if (++n.retries > 40) { goHome('Lost the connection to the host. Use "Rejoin" to try again.'); return; }
+  if (++n.retries > 20) { goHome('Lost the connection to the host. Use "Rejoin" to try again.'); return; }
   if (S) renderChrome();
-  n.retryTimer = setTimeout(() => { n.retryTimer = null; if (J === n) guestConnect(n); }, 3000);
+  n.retryTimer = setTimeout(() => { n.retryTimer = null; if (J === n) guestConnect(n); }, Math.min(3000 * n.retries, 30000));
 }
 
 function guestData(n, m) {
