@@ -207,3 +207,22 @@
 .pt .dlg { text-align: left; }
 .pt .pawn.crowd { width: 3cqw; height: 3cqw; margin: -1.5cqw 0 0 -1.5cqw; font-size: 1.7cqw; }
 @media (max-width: 960px) { .pt #board { width: min(100%, 640px, calc(100vh - 140px)); } }
+
+/* ---------- trades: show each property in its set colour ---------- */
+.pt .tside { background: rgba(255,255,255,.06); border-radius: 14px; padding: 10px 12px; margin-top: 10px; }
+.pt .tside p { margin: 0 0 8px; }
+.pt .tcards { display: flex; flex-wrap: wrap; gap: 8px; }
+.pt .tcard { width: 128px; max-width: 100%; border-radius: 10px; overflow: hidden; background: #fffdf5; color: #121a2e; text-align: center; box-shadow: 0 6px 14px rgba(0,0,0,.35); display: flex; flex-direction: column; }
+.pt .tband { padding: 7px 4px; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .04em; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+.pt .tband.light { color: #101a2e; text-shadow: none; }
+.pt .tname { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 8px 6px; font-size: 13px; font-weight: 800; line-height: 1.2; }
+.pt .tname small { font-weight: 700; color: #a3243b; }
+.pt .tcard.extra { align-items: center; justify-content: center; min-height: 62px; padding: 8px; font-weight: 800; }
+.pt .chk .sw.tsw { width: 16px; height: 30px; border-radius: 4px; flex: none; box-shadow: 0 0 0 1px rgba(255,255,255,.55); }
+.pt .tgroup { display: block; font-size: 11px; color: #a5b4dc; }
+
+/* phones: stack the two sides of a new trade so nothing is cut off */
+@media (max-width: 600px) {
+  .pt .cols { grid-template-columns: minmax(0, 1fr); }
+  .pt .field { flex-wrap: wrap; }
+}

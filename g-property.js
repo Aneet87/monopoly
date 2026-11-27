@@ -532,12 +532,17 @@ function deedHTML(i) {
     <div class="bd">${rows}<div><span>Price</span><b>${money(s.price)}</b></div><div><span>Mortgage value</span><b>${money(s.price / 2)}</b></div><div><span>Owner</span><b>${owner}</b></div></div></div>`;
 }
 
+// A property shown as a card in its set's colour. The colour is written out too, so nobody has to tell shades apart.
+function tradeCard(i) {
+  const group = SP[i].group, light = group === 'lblue' || group === 'yellow' || group === 'util';
+  return `<div class="tcard"><div class="tband ${light ? 'light' : ''}" style="background:${GC[group]}">${esc(G.GROUP_NAMES[group])}</div>
+    <div class="tname">${esc(SP[i].name)}${g.props[i].mortgaged ? '<small>Mortgaged</small>' : ''}</div></div>`;
+}
 function sideText(s) {
-  const parts = [];
-  s.props.forEach(i => parts.push(esc(SP[i].name)));
-  if (s.cash) parts.push(money(s.cash));
-  if (s.cards) parts.push(`${s.cards} Get Out of Jail card${s.cards > 1 ? 's' : ''}`);
-  return parts.join(', ') || 'nothing';
+  const parts = s.props.slice().sort((a, b) => a - b).map(tradeCard);   // board order keeps each colour together
+  if (s.cash) parts.push(`<div class="tcard extra">💵 ${money(s.cash)}</div>`);
+  if (s.cards) parts.push(`<div class="tcard extra">🎟️ ${s.cards} Get Out of Jail card${s.cards > 1 ? 's' : ''}</div>`);
+  return parts.join('') || '<div class="tcard extra">Nothing</div>';
 }
 
 function renderOverlay() {
@@ -549,8 +554,8 @@ function renderOverlay() {
     const t = g.trade, A = g.players[t.from], B = g.players[t.to];
     key = 'trade' + JSON.stringify(t);
     html = `<div class="ov"><div class="dlg"><h2>🤝 Trade offer</h2>
-      <p><b>${A.icon} ${esc(A.name)}</b> gives: ${sideText(t.offer)}</p>
-      <p><b>${B.icon} ${esc(B.name)}</b> gives: ${sideText(t.request)}</p>
+      <div class="tside"><p><b>${A.icon} ${esc(A.name)}</b> gives:</p><div class="tcards">${sideText(t.offer)}</div></div>
+      <div class="tside"><p><b>${B.icon} ${esc(B.name)}</b> gives:</p><div class="tcards">${sideText(t.request)}</div></div>
       <div class="btns">${B.bot ? '<span class="empty">🤖 Waiting for the computer…</span>' : !mine(t.to) ? `<span class="empty">⏳ Waiting for ${esc(B.name)} to answer…</span>` : `<button class="ok" data-pa="tAccept">${esc(B.name)}: Accept</button><button class="sec" data-pa="tDecline">${esc(B.name)}: Decline</button>`}
       ${A.bot || !mine(t.from) ? '' : `<button class="sec" data-pa="tCancel">Cancel offer</button>`}</div></div></div>`;
   } else if (g.phase === 'auction') {
@@ -580,7 +585,7 @@ function tradeSideHTML(pi, key) {
   const props = G.owned(g, pi).map(i => {
     const blocked = G.hasBuildings(g, SP[i].group);
     return `<label class="chk ${blocked ? 'dis' : ''}"><input type="checkbox" data-k="${key}" data-i="${i}" ${s.props.includes(i) ? 'checked' : ''} ${blocked ? 'disabled' : ''}>
-      <span class="sw" style="background:${GC[SP[i].group]}"></span>${esc(SP[i].name)}${g.props[i].mortgaged ? ' (M)' : ''}</label>`;
+      <span class="sw tsw" style="background:${GC[SP[i].group]}"></span><span>${esc(SP[i].name)}${g.props[i].mortgaged ? ' (mortgaged)' : ''}<small class="tgroup">${esc(G.GROUP_NAMES[SP[i].group])}</small></span></label>`;
   }).join('') || '<div class="empty">No properties</div>';
   return `<div class="col"><h5>${p.icon} ${esc(p.name)} gives</h5>${props}
     <div class="field">Cash $<input type="number" min="0" max="${p.cash}" value="${s.cash || ''}" data-k="${key}" data-f="cash" placeholder="0"> <small>(has ${money(p.cash)})</small></div>
