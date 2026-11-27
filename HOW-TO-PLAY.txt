@@ -4,9 +4,39 @@ GAME NIGHT - HOW TO PLAY AND HOW TO UPDATE
 WHAT'S READY
   - Game menu with shared rooms (up to 8 people).
   - Snakes & Ladders (2-8 players).
+  - Candy Trail (2-8 players).
+  - Bump Back (2-4 players, computer levels Easy / Medium / Hard).
+  - Sea Battle (2 players, computer levels Easy / Medium / Hard).
   - Property Tycoon (2-4 players). For now it opens on its own page with its
     own room code. It moves into the shared room in a later stage.
   - The other games show "Coming soon".
+
+CANDY TRAIL
+  - Tap "Draw a card". Your pawn moves by itself.
+  - Colour card: go to the next square of that colour (two blocks = the second
+    one). Treat card: jump to that treat, even backwards.
+  - Rainbows are shortcuts. Honey puddles make you miss a turn.
+  - Option "Gentle mode": treat cards never send you backwards.
+
+BUMP BACK
+  - Draw a card, then tap a glowing pawn, then tap where it should go.
+    The buttons under the board do the same thing.
+  - 1, 2 or Bump! gets a pawn out of Start. 2 draws again.
+  - 4 goes backwards. 7 can be split between two pawns (tap the first pawn,
+    tap how far, then tap the second). 10 can go back 1. 11 can swap with a
+    rival (tap the pawn with the red glow). Bump!: tap the rival to bump.
+  - Slides of other colours carry you along and bump everyone on them.
+  - Exact number needed to get Home.
+  - Options: 2 pawns (quicker game), head start, 2-on-2 teams (4 players).
+
+SEA BATTLE
+  - Your ships are placed for you. Tap one to move it (tap water), tap it again
+    to turn it, or use Shuffle. Then tap Ready.
+  - Tap a square, then Fire. Flame = hit. White dot = miss.
+  - Options: one shot for each ship you have afloat; ships can't touch.
+  - Two people on ONE device: add "Another player on this device". The screen
+    covers itself between turns. Hand over the device when it says so.
+  - A third person in the room can watch. Watchers only see sunk ships.
 
 START A GAME NIGHT (host)
   1. Open your game address. Type your name and pick a picture.
@@ -42,7 +72,7 @@ PAUSE AND FINISH LATER (host)
 HOW TO UPDATE THE WEBSITE ON GITHUB
   1. On your computer open: Desktop > Claude > game-night
   2. Click inside the folder and press Ctrl+A to select every file.
-  3. In your browser open:  https://github.com/Aneet87/monopoly/upload/main
+  3. In your browser open:  https://github.com/Aneet87/games/upload/main
   4. Drag the selected files onto that page. Wait until they are all listed.
   5. Click the green "Commit changes" button.
   6. Delete old files that are no longer used, if you see them: game.js, ui.js,
@@ -53,12 +83,9 @@ HOW TO UPDATE THE WEBSITE ON GITHUB
   7. Wait 2 minutes. Everyone refreshes the page (computer: Ctrl+Shift+R,
      phone: close the tab and open it again).
 
-OPTIONAL: RENAME THE WEB ADDRESS
-  Your address has "monopoly" in it. To change it: on the repository page click
-  Settings, change "Repository name" to game-night, click Rename. Your new
-  address becomes https://aneet87.github.io/game-night/ and the old link stops
-  working, so send friends the new one. Then upload to
-  https://github.com/Aneet87/game-night/upload/main next time.
+YOUR WEB ADDRESSES
+  Game site:    https://aneet87.github.io/games/
+  Upload page:  https://github.com/Aneet87/games/upload/main
 
 THE CONNECTION SERVICE (GOOGLE FIREBASE)
   Moves travel through your free Firebase project "game-night". It works like an

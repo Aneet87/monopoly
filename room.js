@@ -9,6 +9,7 @@
      create(players, options) -> state      (state needs: seq, over, winners [seat numbers], log [])
      turn(state) -> seat number whose move it is
      exec(state, seat, move) -> error text, or null
+     canMove(state, seat) -> (optional) true if that seat may move now, for steps everyone does at once
      bot(state, seat, level) -> move
      view(state, seats) -> what those seats are allowed to see (hides secret cards, ships...)
      mount(element, api) -> { reset(state), update(state) (may animate, returns a promise), refresh(), destroy() }
@@ -465,18 +466,20 @@ async function draw(s, skipAnimation) {
 const api = {
   get mySeats() { return S && S.match ? S.match.mySeats : []; },
   get turn() { return S && S.match ? S.match.turn : -1; },
-  // true when this device should be offered a move right now
-  canAct() {
+  // true when this device should be offered a move for that seat right now (default: whoever's turn it is)
+  canAct(seat) {
     if (!S || !S.match || ui.queue.length || S.match.hold || S.match.state.over) return false;
     if (J && J.status !== 'online') return false;
-    const m = S.roster.find(x => x.id === S.match.seats[S.match.turn]);
-    return S.match.mySeats.includes(S.match.turn) && !!m && !m.covering;
+    const i = seat === undefined ? S.match.turn : seat, game = Core.game(S.match.gameId);
+    const may = game.canMove ? game.canMove(S.match.state, i) : i === S.match.turn;
+    const m = S.roster.find(x => x.id === S.match.seats[i]);
+    return may && S.match.mySeats.includes(i) && !!m && !m.covering;
   },
-  move(move) {
-    if (!api.canAct()) return false;
-    const seat = S.match.turn;
-    if (H) { const err = hostMove(seat, move); if (err) { toast(err); return false; } return true; }
-    if (J.ch) { J.ch.send({ t: 'move', seat, move }); return true; }
+  move(move, seat) {
+    const i = seat === undefined ? (S && S.match ? S.match.turn : -1) : seat;
+    if (!api.canAct(i)) return false;
+    if (H) { const err = hostMove(i, move); if (err) { toast(err); return false; } return true; }
+    if (J.ch) { J.ch.send({ t: 'move', seat: i, move }); return true; }
     return false;
   },
 };
