@@ -8,7 +8,8 @@ WHAT'S READY
   - Bump Back (2-4 players, computer levels Easy / Medium / Hard).
   - Sea Battle (2 players, computer levels Easy / Medium / Hard).
   - Property Tycoon (2-8 players, computer levels Easy / Medium / Hard).
-  - The other games show "Coming soon".
+  - Memory Match (2-8), Go Fish (2-6), Dice Yacht (2-8), Crazy Eights (2-8).
+    All have computer levels Easy / Medium / Hard.
 
 PROPERTY TYCOON
   - Pick it in the room like any other game. In the lobby choose a board theme,
@@ -37,6 +38,34 @@ BUMP BACK
   - Slides of other colours carry you along and bump everyone on them.
   - Exact number needed to get Home.
   - Options: 2 pawns (quicker game), head start, 2-on-2 teams (4 players).
+
+MEMORY MATCH
+  - Tap two cards. A pair stays with you and you go again.
+  - Pick 24, 36 or 48 cards in the lobby.
+  - Playing with young kids? Choose the Easy computer.
+
+GO FISH
+  - Tap a card in your hand (what you want), tap a player, then tap Ask.
+  - Option "Easy pairs mode": collect sets of 2 instead of 4.
+  - The numbers under each name are cards held and sets made.
+
+DICE YACHT
+  - Tap Roll. Tap dice to KEEP them, then roll again (3 rolls at most).
+  - Green numbers show what each box would score. Tap one, then tap it again
+    to lock it in.
+  - "Yacht!" means all five dice the same. Only the first one scores 50; there
+    is no extra bonus for more.
+
+CRAZY EIGHTS
+  - Tap a glowing card to play it. After an 8, choose the new suit.
+  - Options: draw until you can play, or draw just one; action cards
+    (2 = next player draws two, Queen = skip, Ace = reverse).
+  - If the game gets stuck with nothing but drawing and eights, the player
+    with the fewest cards wins.
+
+PRIVATE CARDS ON ONE DEVICE (Go Fish, Crazy Eights, Sea Battle)
+  The screen is covered until the right person taps "show my cards" (or "show
+  my screen"). Tap "Hide..." before you hand the device over.
 
 SEA BATTLE
   - Your ships are placed for you. Tap one to move it (tap water), tap it again
