@@ -10,6 +10,10 @@
      turn(state) -> seat number whose move it is
      exec(state, seat, move) -> error text, or null
      canMove(state, seat) -> (optional) true if that seat may move now, for steps everyone does at once
+     step(state) -> (optional, instead of bot) let one computer player do something; true if it did
+     sync(state, seats) -> (optional) told which seats the computer is playing
+     shuffle(options) -> (optional) true to mix up the seating order
+     presets, foldOptions, resultHTML(state), ownSide (the game draws its own player list and log)
      bot(state, seat, level) -> move
      view(state, seats) -> what those seats are allowed to see (hides secret cards, ships...)
      mount(element, api) -> { reset(state), update(state) (may animate, returns a promise), refresh(), destroy() }
@@ -98,9 +102,18 @@ function snapshot(mineIds) {
 }
 const hostMine = () => H.room.roster.filter(m => m.kind === 'host' || m.kind === 'local').map(m => m.id);
 
+// Let a game know which seats the computer is playing right now.
+function syncSeats() {
+  const mt = H && H.room.match;
+  if (!mt) return;
+  const game = Core.game(mt.gameId);
+  if (game.sync) game.sync(mt.state, mt.seats.map(member));
+}
+
 // Send everyone the latest picture (each device only gets what it is allowed to see) and save the room.
 function publish() {
   if (!H) return;
+  syncSeats();
   H.room.roster.forEach(m => { if (m.kind === 'remote' && H.chans[m.cid]) H.chans[m.cid].send({ t: 'snap', s: snapshot([m.id]) }); });
   lsSet(HOST_KEY, { code: H.code, room: H.room });
   receive(JSON.parse(JSON.stringify(snapshot(hostMine()))));
@@ -259,6 +272,9 @@ function hostLeft(who) {
 function startMatch() {
   const game = Core.game(H.room.gameId), players = lineup();
   if (players.length < game.min) { toast(`${game.name} needs at least ${game.min} players`); return; }
+  if (game.shuffle && game.shuffle(optionsFor(game.id))) {
+    for (let i = players.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [players[i], players[j]] = [players[j], players[i]]; }
+  }
   const state = game.create(players.map(({ name, icon, color }) => ({ name, icon, color })), optionsFor(game.id));
   H.room.matches++;
   H.room.roster.forEach(m => { m.covering = false; });
@@ -270,15 +286,21 @@ function hostMove(seat, move) {
   const mt = H && H.room.match;
   if (!mt) return 'No game is running.';
   if (mt.hold) return 'The game is on hold until everyone has rejoined.';
+  syncSeats();
   let err;
   try { err = Core.game(mt.gameId).exec(mt.state, seat, move); } catch (e) { console.error(e); err = 'Something went wrong with that move.'; }
   if (err) return err;
+  settleMatch(mt);
+  return null;
+}
+
+// After any change: keep score if the game just ended, then show everyone.
+function settleMatch(mt) {
   if (mt.state.over && !mt.counted) {
     mt.counted = true;
     mt.seats.forEach((id, i) => { const m = member(id); if (m) { m.played++; if (mt.state.winners.includes(i)) m.wins++; } });
   }
   publish();
-  return null;
 }
 
 // Computer players (and cover for absent friends). Waits until the host's own animation has finished.
@@ -287,7 +309,18 @@ function scheduleBot() {
   clearTimeout(H.botTimer);
   const mt = H.room.match;
   if (!mt || mt.hold || mt.state.over || ui.pumping) return;
-  const game = Core.game(mt.gameId), seat = game.turn(mt.state), who = member(mt.seats[seat]);
+  const game = Core.game(mt.gameId);
+  if (game.step) {   // this game decides for itself which computer player acts next
+    if (!mt.seats.some(id => { const m = member(id); return !m || m.kind === 'bot' || m.covering; })) return;
+    const room = H;
+    H.botTimer = setTimeout(() => {
+      if (H !== room || H.room.match !== mt || ui.pumping || mt.hold) return;
+      syncSeats();
+      try { if (game.step(mt.state)) settleMatch(mt); } catch (e) { console.error(e); }
+    }, BOT_DELAY);
+    return;
+  }
+  const seat = game.turn(mt.state), who = member(mt.seats[seat]);
   if (who && who.kind !== 'bot' && !who.covering) return;
   const room = H;
   H.botTimer = setTimeout(() => {
@@ -408,7 +441,7 @@ function leaveRoom() {
 function destroyView() {
   if (ui.view) { try { ui.view.destroy(); } catch (e) { console.error(e); } }
   ui.view = null; ui.viewKey = '';
-  $('#stage').innerHTML = '';
+  $('#stage').innerHTML = ''; $('#gameside').innerHTML = '';
 }
 
 // Snapshots are drawn one at a time so that each animation finishes before the next one starts.
@@ -464,6 +497,9 @@ async function draw(s, skipAnimation) {
 
 // What a game's screen is allowed to ask the room.
 const api = {
+  get side() { return $('#gameside'); },
+  get hold() { return !!(S && S.match && S.match.hold); },
+  get isHost() { return !!H; },
   get mySeats() { return S && S.match ? S.match.mySeats : []; },
   get turn() { return S && S.match ? S.match.turn : -1; },
   // true when this device should be offered a move for that seat right now (default: whoever's turn it is)
@@ -535,6 +571,17 @@ function optionHTML(d, value, editable) {
   return `<label class="opt"><input type="checkbox" data-opt="${d.key}" ${value ? 'checked' : ''} ${editable ? '' : 'disabled'}><span>${esc(d.label)}<small>${esc(d.help || '')}</small></span></label>`;
 }
 
+// A game's settings. Games with lots of them keep the main choice and style buttons in view and fold the rest away.
+function optionsHTML(game, host) {
+  const list = items => `<div class="opts">${items.map(d => optionHTML(d, S.opts[d.key], host)).join('')}</div>`;
+  const all = game.options || [];
+  if (!game.foldOptions) return list(all);
+  const presets = host && game.presets
+    ? `<p class="hint">Quick styles:</p><div class="prow">${Object.keys(game.presets).map(n => `<button class="sm sec" data-a="preset" data-n="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : '';
+  return `${list(all.filter(d => d.top))}${presets}
+    <details class="fold" ${ui.foldOpen ? 'open' : ''}><summary data-a="fold">${esc(game.foldOptions)}</summary>${list(all.filter(d => !d.top))}</details>`;
+}
+
 function lobbyHTML() {
   const host = !!H, game = Core.game(S.gameId);
   if (!game) return '<div class="notice">Refresh this page to get the newest version of the site.</div>';
@@ -567,7 +614,7 @@ function lobbyHTML() {
     <div class="card"><h3>${host ? 'Choose the game' : 'Tonight\'s game'}</h3>
       <div class="shelf mini">${Core.games.filter(g => !g.soon && !g.href && (host || g.id === S.gameId)).map(g => gameCard(g, host ? 'pickGame' : 'noop', g.id === S.gameId ? 'on' : '')).join('')}</div>
       <ul class="rules">${game.rules.map(r => `<li>${esc(r)}</li>`).join('')}</ul>
-      <div class="opts">${(game.options || []).map(d => optionHTML(d, S.opts[d.key], host)).join('')}</div></div>
+      ${optionsHTML(game, host)}</div>
     ${host
       ? `<button class="bigstart" data-a="start" ${ready ? '' : 'disabled'}>${ready ? `Start ${esc(game.name)} (${playing.length} players)` : `Need at least ${game.min} players`}</button>
          <p class="foot"><button class="sm sec" data-a="pause">⏸ Pause &amp; save the room</button> <button class="sm sec" data-a="close">Close room</button></p>`
@@ -615,9 +662,10 @@ function renderChrome() {
     ? `<div class="notice">⏸ Waiting for ${esc(away.map(m => m.name).join(', ') || 'players')} to rejoin.${H ? ' <button class="sm" data-a="unhold">Start anyway</button>' : ''}</div>`
     : (H && !state.over ? away.map(m => `<div class="notice">${esc(m.name)} lost connection. <button class="sm" data-a="coverNow" data-id="${m.id}">Let the computer play now</button></div>`).join('') : '');
   const watching = !mt.mySeats.length ? '<div class="notice">👀 You are watching this game. You can join the next one.</div>' : '';
-  $('#side').innerHTML = `${holdBox}${watching}
-    <div class="panel"><h4>Players</h4>${players}</div>
-    <div class="panel"><h4>What happened</h4><div class="log">${state.log.slice(-12).reverse().map(l => `<div>${esc(l)}</div>`).join('')}</div></div>
+  const ownSide = Core.game(mt.gameId).ownSide;
+  $('#roomside').innerHTML = `${holdBox}${watching}
+    ${ownSide ? '' : `<div class="panel"><h4>Players</h4>${players}</div>
+    <div class="panel"><h4>What happened</h4><div class="log">${state.log.slice(-12).reverse().map(l => `<div>${esc(l)}</div>`).join('')}</div></div>`}
     ${scoreHTML()}
     <div class="panel roomctl">${H
       ? '<button class="sm sec" data-a="pause">⏸ Pause &amp; save</button><button class="sm sec" data-a="endGame">Back to game menu</button><button class="sm sec" data-a="close">Close room</button>'
@@ -640,6 +688,7 @@ function showResult() {
   $('#modal').innerHTML = `<div class="ov"><div class="confetti">${confetti}</div><div class="dlg">
     <div class="trophy">${winners.map(w => w.icon).join('')}</div>
     <h2>${esc(winners.map(w => w.name).join(' & '))} ${winners.length > 1 ? 'win' : 'wins'}!</h2>
+    ${Core.game(S.match.gameId).resultHTML ? Core.game(S.match.gameId).resultHTML(S.match.state) : ''}
     ${scoreHTML()}
     <div class="prow center">${H ? '<button class="ok" data-a="again">Play again</button><button data-a="endGame">Choose a game</button>' : '<span class="hint">The host picks what to play next.</span>'}
       <button class="sec" data-a="closeModal">See the board</button></div></div></div>`;
@@ -686,6 +735,14 @@ const actions = {
     if (i > 0) { [r[i - 1], r[i]] = [r[i], r[i - 1]]; publish(); }
   },
   pickGame(el) { H.room.gameId = el.dataset.id; publish(); },
+  preset(el) {
+    const id = H.room.gameId, values = Object.assign({}, Core.game(id).presets[el.dataset.n]);
+    const theme = optionsFor(id).theme;   // a style changes the rules, not the board you picked
+    H.room.opts[id] = Object.assign(values, theme ? { theme } : {});
+    toast(`Style chosen: ${el.dataset.n}`);
+    publish();
+  },
+  fold() { setTimeout(() => { const d = document.querySelector('details.fold'); ui.foldOpen = !!(d && d.open); }, 0); },
   start: startMatch,
   again() { H.room.gameId = H.room.match.gameId; H.room.match = null; startMatch(); if (!H.room.match) publish(); },
   endGame() {
@@ -702,6 +759,7 @@ const actions = {
 };
 
 document.addEventListener('click', e => {
+  if (H && e.target.closest('[data-room="unhold"]')) { actions.unhold(); return; }
   const el = e.target.closest('[data-a]');
   if (el && !el.disabled && actions[el.dataset.a]) actions[el.dataset.a](el);
 });

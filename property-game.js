@@ -189,7 +189,7 @@ function create(defs, options) {
   const g = {
     status: 'playing', options: o,
     players: defs.map((d, i) => ({
-      name: d.name, bot: !!d.bot, level: d.level || 'medium', color: COLORS[i], icon: d.icon || ICONS[i],
+      name: d.name, bot: !!d.bot, level: d.level || 'medium', color: d.color || COLORS[i % COLORS.length], icon: d.icon || ICONS[i],
       cash: o.startCash, pos: 0, inJail: false, jailTurns: 0, jailCards: [], bankrupt: false,
     })),
     props: SPACES.map(s => (s.group ? { owner: -1, houses: 0, mortgaged: false } : null)),
@@ -204,10 +204,12 @@ function create(defs, options) {
   if (o.randomOrder) shuffle(g.players);
   if (o.dealProps > 0) {
     const pool = shuffle(OWNABLE.slice());
-    for (let r = 0; r < o.dealProps; r++) {
+    // everyone gets the same number, even if there are not enough properties for the full amount
+    const each = Math.min(o.dealProps, Math.floor(pool.length / g.players.length));
+    for (let r = 0; r < each; r++) {
       g.players.forEach((p, pi) => { g.props[pool.pop()].owner = pi; });
     }
-    log(g, `Each player was dealt ${o.dealProps} random properties.`);
+    log(g, `Each player was dealt ${each} random properties.`);
   }
   log(g, `Game started! ${g.players[0].name} goes first.`);
   return g;

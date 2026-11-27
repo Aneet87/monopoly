@@ -7,9 +7,18 @@ WHAT'S READY
   - Candy Trail (2-8 players).
   - Bump Back (2-4 players, computer levels Easy / Medium / Hard).
   - Sea Battle (2 players, computer levels Easy / Medium / Hard).
-  - Property Tycoon (2-4 players). For now it opens on its own page with its
-    own room code. It moves into the shared room in a later stage.
+  - Property Tycoon (2-8 players, computer levels Easy / Medium / Hard).
   - The other games show "Coming soon".
+
+PROPERTY TYCOON
+  - Pick it in the room like any other game. In the lobby choose a board theme,
+    a quick style, or open "House rules and settings".
+  - Roll, buy or auction. Manage your properties in the Properties panel
+    (on phones it is below the board). "Propose trade" makes a deal.
+  - When someone offers you a trade, the computers wait for your answer.
+  - Keys: R roll, B buy, A auction, E end turn, J pay jail fine, C jail card.
+  - With 8 players the game takes longer and there are fewer properties each.
+    "Quick game" deals properties at the start.
 
 CANDY TRAIL
   - Tap "Draw a card". Your pawn moves by itself.
@@ -76,10 +85,11 @@ HOW TO UPDATE THE WEBSITE ON GITHUB
   4. Drag the selected files onto that page. Wait until they are all listed.
   5. Click the green "Commit changes" button.
   6. Delete old files that are no longer used, if you see them: game.js, ui.js,
-     style.css, HOW-TO-PLAY-ONLINE.txt, peerjs.min.js and relay-settings.js
+     style.css, HOW-TO-PLAY-ONLINE.txt, peerjs.min.js, relay-settings.js and
+     property-ui.js
      (Click the file name, then the "..." menu at the top right, then
      "Delete file", then "Commit changes".)
-     Do NOT delete property-game.js, property-ui.js or property.css.
+     Do NOT delete property-game.js, property.css or property.html.
   7. Wait 2 minutes. Everyone refreshes the page (computer: Ctrl+Shift+R,
      phone: close the tab and open it again).
 
